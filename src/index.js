@@ -7,6 +7,7 @@ const cors = require("cors");
 const http = require("http");
 const { Server } = require("socket.io");
 const cluster = require("node:cluster");
+const setupBullBoard = require("./bullBoard.js");
 
 const PORT = 8060;
 
@@ -20,6 +21,11 @@ const io = new Server(server, {
 });
 
 app.use(cors())
+
+// ------ Bull Board Dashboard ------ //
+// Set up before other middleware to avoid authentication on admin panel
+setupBullBoard(app);
+
 // ------ Middlewares ------ //
 
 // For serving static files
