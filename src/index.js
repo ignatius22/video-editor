@@ -3,11 +3,14 @@ const cpeak = require("cpeak");
 const { authenticate, serverIndex } = require("./middleware/index.js");
 const apiRouter = require("./router.js");
 const path = require("path");
+const cors = require("cors")
+
 
 const PORT = 8060;
 
 const server = express();
 
+server.use(cors())
 // ------ Middlewares ------ //
 
 // For serving static files

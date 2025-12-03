@@ -18,6 +18,15 @@ if (cluster.isPrimary) {
         width,
         height,
       });
+    } else if (message.messageType === "new-convert") {
+      const { videoId, targetFormat, originalPath, convertedPath } = message.data;
+      jobs.enqueue({
+        type: "convert",
+        videoId,
+        targetFormat,
+        originalPath,
+        convertedPath,
+      });
     }
   });
 
