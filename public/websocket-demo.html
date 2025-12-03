@@ -108,6 +108,11 @@
             border-left-color: #ec4899;
         }
 
+        .event.progress {
+            background: #f3e8ff;
+            border-left-color: #a855f7;
+        }
+
         .event-header {
             display: flex;
             justify-content: space-between;
@@ -235,6 +240,13 @@
                     <div><strong>Total Attempts:</strong> ${data.totalAttempts}</div>
                     <div><strong>Final Error:</strong> ${data.error}</div>
                 `;
+            } else if (type === 'progress') {
+                detailsHTML += `
+                    <div><strong>Progress:</strong> ${data.progress}%</div>
+                    <div class="progress-bar-container" style="width: 100%; background: #e5e7eb; border-radius: 10px; margin-top: 10px;">
+                        <div class="progress-bar" style="width: ${data.progress}%; background: #10b981; height: 20px; border-radius: 10px; transition: width 0.3s;"></div>
+                    </div>
+                `;
             }
 
             eventDiv.innerHTML = `
@@ -280,6 +292,11 @@
         socket.on('job:permanent-failure', (data) => {
             console.log('Job Permanent Failure:', data);
             addEvent('permanent-failure', data, '⛔');
+        });
+
+        socket.on('job:progress', (data) => {
+            console.log('Job Progress:', data);
+            addEvent('progress', data, '📊');
         });
 
         function clearEvents() {

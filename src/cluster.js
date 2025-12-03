@@ -1,8 +1,8 @@
 const cluster = require("node:cluster");
-const JobQueue = require("../lib/JobQueue.js");
+const BullQueue = require("../lib/BullQueue.js");
 
 if (cluster.isPrimary) {
-  const jobs = new JobQueue();
+  const jobs = new BullQueue();
 
   // Retry configuration
   const MAX_RETRIES = 3;
@@ -39,6 +39,15 @@ if (cluster.isPrimary) {
     console.log(`   Type: ${data.type}`);
     console.log(`   Video: ${data.videoId}`);
     console.log(`   Wait Time: ${(waitTime / 1000).toFixed(2)}s`);
+  });
+
+  jobs.on('job:progress', (data) => {
+    broadcastToWorkers('job:progress', data);
+    console.log(`\n📊 [JOB PROGRESS]`);
+    console.log(`   Job ID: ${data.jobId}`);
+    console.log(`   Type: ${data.type}`);
+    console.log(`   Video: ${data.videoId}`);
+    console.log(`   Progress: ${data.progress}%`);
   });
 
   jobs.on('job:completed', (data) => {
