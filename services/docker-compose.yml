@@ -1,0 +1,148 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15
+    container_name: video-editor-postgres
+    environment:
+      POSTGRES_DB: video_editor
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ../database/schema.sql:/docker-entrypoint-initdb.d/schema.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - microservices
+
+  # Redis (for Bull queue)
+  redis:
+    image: redis:7-alpine
+    container_name: video-editor-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - microservices
+
+  # User Service
+  user-service:
+    build:
+      context: ./user-service
+      dockerfile: Dockerfile
+    container_name: user-service
+    environment:
+      USER_SERVICE_PORT: 3001
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: video_editor
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      NODE_ENV: production
+    ports:
+      - "3001:3001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - microservices
+    restart: unless-stopped
+
+  # Video Service
+  video-service:
+    build:
+      context: ./video-service
+      dockerfile: Dockerfile
+    container_name: video-service
+    environment:
+      VIDEO_SERVICE_PORT: 3002
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: video_editor
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      USER_SERVICE_URL: http://user-service:3001
+      JOB_SERVICE_URL: http://job-service:3003
+      NODE_ENV: production
+    ports:
+      - "3002:3002"
+    volumes:
+      - ../storage:/app/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      user-service:
+        condition: service_started
+    networks:
+      - microservices
+    restart: unless-stopped
+
+  # Job Service
+  job-service:
+    build:
+      context: ./job-service
+      dockerfile: Dockerfile
+    container_name: job-service
+    environment:
+      JOB_SERVICE_PORT: 3003
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: video_editor
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      NODE_ENV: production
+    ports:
+      - "3003:3003"
+    volumes:
+      - ../storage:/app/storage
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    networks:
+      - microservices
+    restart: unless-stopped
+
+  # API Gateway
+  api-gateway:
+    build:
+      context: ./api-gateway
+      dockerfile: Dockerfile
+    container_name: api-gateway
+    environment:
+      GATEWAY_PORT: 3000
+      USER_SERVICE_URL: http://user-service:3001
+      VIDEO_SERVICE_URL: http://video-service:3002
+      JOB_SERVICE_URL: http://job-service:3003
+      NODE_ENV: production
+    ports:
+      - "3000:3000"
+    depends_on:
+      - user-service
+      - video-service
+      - job-service
+    networks:
+      - microservices
+    restart: unless-stopped
+
+networks:
+  microservices:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local
