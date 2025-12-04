@@ -218,6 +218,12 @@ async function migrateVideos(videos, userIdMap) {
         continue;
       }
 
+      // Build metadata object
+      const metadata = {
+        ...(oldVideo.metadata || {}),
+        extractedAudio: oldVideo.extractedAudio || false
+      };
+
       // Insert video
       await query(
         `INSERT INTO videos (video_id, user_id, name, extension, dimensions, metadata, created_at)
@@ -228,7 +234,7 @@ async function migrateVideos(videos, userIdMap) {
           oldVideo.name,
           oldVideo.extension,
           JSON.stringify(oldVideo.dimensions || null),
-          JSON.stringify(oldVideo.metadata || {}),
+          JSON.stringify(metadata),
           oldVideo.createdAt || new Date().toISOString()
         ]
       );
@@ -237,7 +243,12 @@ async function migrateVideos(videos, userIdMap) {
 
       // Migrate video operations if they exist
       if (oldVideo.resizes) {
-        await migrateVideoOperations(oldVideo.videoId, 'resize', oldVideo.resizes);
+        await migrateVideoOperations(oldVideo.videoId, oldVideo.extension, 'resize', oldVideo.resizes);
+      }
+
+      // Migrate conversions if they exist
+      if (oldVideo.conversions) {
+        await migrateVideoOperations(oldVideo.videoId, oldVideo.extension, 'convert', oldVideo.conversions);
       }
 
       migrated++;
@@ -258,19 +269,43 @@ async function migrateVideos(videos, userIdMap) {
 /**
  * Migrate video operations (resizes, conversions, etc.)
  */
-async function migrateVideoOperations(videoId, operationType, operations) {
+async function migrateVideoOperations(videoId, videoExtension, operationType, operations) {
   if (!operations || typeof operations !== 'object') {
     return;
   }
 
   for (const [key, operation] of Object.entries(operations)) {
     try {
-      // Parse operation parameters (e.g., "800x600" → {width: 800, height: 600})
+      // Parse operation parameters
       const params = {};
-      if (operationType === 'resize' && key.includes('x')) {
-        const [width, height] = key.split('x').map(Number);
-        params.width = width;
-        params.height = height;
+      let resultPath = null;
+      let status = 'pending';
+
+      if (operationType === 'resize') {
+        // key = "800x600"
+        if (key.includes('x')) {
+          const [width, height] = key.split('x').map(Number);
+          params.width = width;
+          params.height = height;
+        }
+        // Determine status and path
+        status = operation.processing ? 'processing' : 'completed';
+        resultPath = `./storage/${videoId}/${key}.${videoExtension}`;
+
+      } else if (operationType === 'convert') {
+        // key = target format like "mov"
+        params.targetFormat = key;
+        params.originalFormat = videoExtension.toLowerCase();
+
+        // Determine status from operation data
+        if (operation.processing) {
+          status = 'processing';
+        } else if (operation.completed) {
+          status = 'completed';
+          resultPath = `./storage/${videoId}/converted.${key}`;
+        } else if (operation.error) {
+          status = 'failed';
+        }
       }
 
       await query(
@@ -279,14 +314,14 @@ async function migrateVideoOperations(videoId, operationType, operations) {
         [
           videoId,
           operationType,
-          operation.processing ? 'processing' : (operation.path ? 'completed' : 'pending'),
+          status,
           JSON.stringify(params),
-          operation.path || null,
-          new Date().toISOString()
+          resultPath,
+          operation.timestamp || new Date().toISOString()
         ]
       );
 
-      log(`  ✅ Migrated operation: ${operationType} ${key}`, 'green');
+      log(`  ✅ Migrated operation: ${operationType} ${key} (${status})`, 'green');
 
     } catch (error) {
       log(`  ⚠️  Error migrating operation ${key}: ${error.message}`, 'yellow');
