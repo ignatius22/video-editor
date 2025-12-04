@@ -1,7 +1,7 @@
-const DB = require("../DB");
+const sessionService = require("../../database/services/sessionService");
 const path = require("path");
 
-exports.authenticate = (req, res, next) => {
+exports.authenticate = async (req, res, next) => {
   const routesToAuthenticate = [
     "GET /api/user",
     "PUT /api/user",
@@ -11,15 +11,18 @@ exports.authenticate = (req, res, next) => {
   ];
 
   if (routesToAuthenticate.indexOf(req.method + " " + req.url) !== -1) {
-    // If we have a token cookie, then save the userId to the req object
+    // If we have a token cookie, validate it
     if (req.headers.cookie) {
       const token = req.headers.cookie.split("=")[1];
 
-      DB.update();
-      const session = DB.sessions.find((session) => session.token === token);
-      if (session) {
-        req.userId = session.userId;
-        return next();
+      try {
+        const user = await sessionService.validateToken(token);
+        if (user) {
+          req.userId = user.id;
+          return next();
+        }
+      } catch (error) {
+        console.error("Authentication error:", error);
       }
     }
 
