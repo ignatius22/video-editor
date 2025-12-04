@@ -7,7 +7,7 @@ const { promisify } = require("util");
 const stream = require("stream");
 const pipeline = promisify(stream.pipeline);
 const util = require("../../lib/util");
-const DB = require("../DB");
+const videoService = require("../../database/services/videoService");
 const FF = require("../../lib/FF");
 
 let jobs;
@@ -17,13 +17,20 @@ if (cluster.isPrimary) {
 }
 
 // Return the list of all the videos that a logged in user has uploaded
-const getVideos = (req, res, handleErr) => {
-  DB.update();
-  const videos = DB.videos.filter((video) => {
-    return video.userId === req.userId;
-  });
+const getVideos = async (req, res, handleErr) => {
+  try {
+    const videos = await videoService.getUserVideos(req.userId, {
+      limit: 100,
+      offset: 0,
+      orderBy: 'created_at',
+      order: 'DESC'
+    });
 
-  res.status(200).json(videos);
+    res.status(200).json(videos);
+  } catch (error) {
+    console.error("Get videos error:", error);
+    return handleErr({ status: 500, message: "Failed to retrieve videos." });
+  }
 };
 
 // Upload a video file
@@ -62,19 +69,15 @@ const uploadVideo = async (req, res, handleErr) => {
     // Get video dimensions
     const dimensions = await FF.getDimensions(fullPath);
 
-    // Save to DB
-    DB.update();
-    DB.videos.unshift({
-      id: DB.videos.length,
+    // Save to database
+    await videoService.createVideo({
       videoId,
+      userId: req.userId,
       name,
       extension,
       dimensions,
-      userId: req.userId,
-      extractedAudio: false,
-      resizes: {},
+      metadata: { extractedAudio: false }
     });
-    DB.save();
 
     return res.status(201).json({
       status: "success",
@@ -102,32 +105,41 @@ const uploadVideo = async (req, res, handleErr) => {
 const extractAudio = async (req, res, handleErr) => {
   const videoId = req.query.videoId;
 
-  DB.update();
-  const video = DB.videos.find((video) => video.videoId === videoId);
-
-  if (video.extractedAudio) {
-    return handleErr({
-      status: 400,
-      message: "The audio has already been extracted for this video.",
-    });
-  }
-
   try {
+    const video = await videoService.findByVideoId(videoId);
+
+    if (!video) {
+      return handleErr({ status: 404, message: "Video not found." });
+    }
+
+    if (video.metadata && video.metadata.extractedAudio) {
+      return handleErr({
+        status: 400,
+        message: "The audio has already been extracted for this video.",
+      });
+    }
+
     const originalVideoPath = `./storage/${videoId}/original.${video.extension}`;
     const targetAudioPath = `./storage/${videoId}/audio.aac`;
 
     await FF.extractAudio(originalVideoPath, targetAudioPath);
 
-    video.extractedAudio = true;
-    DB.save();
+    // Update metadata
+    await videoService.updateVideo(videoId, {
+      metadata: { ...video.metadata, extractedAudio: true }
+    });
 
     res.status(200).json({
       status: "success",
       message: "The audio was extracted successfully!",
     });
   } catch (e) {
-    util.deleteFile(targetAudioPath);
-    return handleErr(e);
+    console.error("Extract audio error:", e);
+    return handleErr({
+      status: 500,
+      message: "Failed to extract audio.",
+      details: e.message
+    });
   }
 };
 
@@ -137,38 +149,52 @@ const resizeVideo = async (req, res, handleErr) => {
   const width = Number(req.body.width);
   const height = Number(req.body.height);
 
-  DB.update();
-  const video = DB.videos.find((video) => video.videoId === videoId);
-  video.resizes[`${width}x${height}`] = { processing: true };
-  DB.save();
+  try {
+    // Check if video exists
+    const video = await videoService.findByVideoId(videoId);
+    if (!video) {
+      return handleErr({ status: 404, message: "Video not found." });
+    }
 
-  if (jobs) {
-    jobs.enqueue({
-      type: "resize",
-      videoId,
-      width,
-      height,
+    // Add resize operation to database
+    await videoService.addOperation(videoId, {
+      type: 'resize',
+      status: 'pending',
+      parameters: { width, height }
     });
-  } else if (process.send) {
-    process.send({
-      messageType: "new-resize",
-      data: { videoId, width, height },
+
+    // Enqueue job in Bull queue
+    if (jobs) {
+      jobs.enqueue({
+        type: "resize",
+        videoId,
+        width,
+        height,
+      });
+    } else if (process.send) {
+      process.send({
+        messageType: "new-resize",
+        data: { videoId, width, height },
+      });
+    }
+
+    res.status(200).json({
+      status: "success",
+      message: "The video is now being processed!",
     });
+  } catch (error) {
+    console.error("Resize video error:", error);
+    return handleErr({ status: 500, message: "Failed to start video resize." });
   }
-
-  res.status(200).json({
-    status: "success",
-    message: "The video is now being processed!",
-  });
 };
 
 // Return a video asset to the client
 const getVideoAsset = async (req, res, handleErr) => {
   const { videoId, type, format, dimensions } = req.query;
 
-  DB.update();
-  const video = DB.videos.find((v) => v.videoId === videoId);
-  if (!video) return handleErr({ status: 404, message: "Video not found!" });
+  try {
+    const video = await videoService.findByVideoId(videoId);
+    if (!video) return handleErr({ status: 404, message: "Video not found!" });
 
   let filePath;
   let filename;
@@ -204,8 +230,15 @@ const getVideoAsset = async (req, res, handleErr) => {
       extension = format || "mp4";
       filename = `${video.name}-converted.${extension}`;
       filePath = `../../storage/${videoId}/converted.${extension}`;
-      // Check conversion status
-      if (!video.conversions?.[extension]?.finishedAt) {
+
+      // Check conversion status from operations table
+      const convertOperation = await videoService.findOperation(
+        videoId,
+        'convert',
+        { targetFormat: extension, originalFormat: video.extension.toLowerCase() }
+      );
+
+      if (!convertOperation || convertOperation.status !== 'completed') {
         return handleErr({
           status: 400,
           message: `Conversion to ${extension.toUpperCase()} not finished yet.`,
@@ -257,6 +290,11 @@ const getVideoAsset = async (req, res, handleErr) => {
       return handleErr({ status: 500, message: "Error loading video asset." });
     res.destroy();
   }
+  } catch (error) {
+    console.error("Get video asset error:", error);
+    if (!res.headersSent)
+      return handleErr({ status: 500, message: "Error retrieving video asset." });
+  }
 };
 
 // Convert video format
@@ -284,23 +322,23 @@ const convertVideoFormat = async (req, res, handleErr) => {
   }
 
   // Retrieve video
-  DB.update();
-  const video = DB.videos.find((v) => v.videoId === videoId);
+  try {
+    const video = await videoService.findByVideoId(videoId);
 
-  if (!video) {
-    return handleErr({
-      status: 404,
-      message: "Video not found!",
-    });
-  }
+    if (!video) {
+      return handleErr({
+        status: 404,
+        message: "Video not found!",
+      });
+    }
 
-  // Already same format?
-  if (video.extension.toLowerCase() === targetFormat) {
-    return handleErr({
-      status: 400,
-      message: `Video is already in ${targetFormat.toUpperCase()} format!`,
-    });
-  }
+    // Already same format?
+    if (video.extension.toLowerCase() === targetFormat) {
+      return handleErr({
+        status: 400,
+        message: `Video is already in ${targetFormat.toUpperCase()} format!`,
+      });
+    }
 
   const originalPath = path.join(
     __dirname,
@@ -312,20 +350,17 @@ const convertVideoFormat = async (req, res, handleErr) => {
     `../../storage/${videoId}/converted.${targetFormat}`
   );
 
-  try {
     console.log(`🔄 Starting conversion: ${videoId} → ${targetFormat}`);
 
-    // Prepare conversion map if missing
-    if (!video.conversions) video.conversions = {};
-
-    // Add detailed tracking
-    video.conversions[targetFormat] = {
-      status: "processing",
-      startedAt: Date.now(),
-      finishedAt: null,
-      error: null,
-    };
-    DB.save();
+    // Add conversion operation to database
+    await videoService.addOperation(videoId, {
+      type: 'convert',
+      status: 'pending',
+      parameters: {
+        targetFormat,
+        originalFormat: video.extension.toLowerCase()
+      }
+    });
 
     // Payload used by both job queue and child process
     const jobPayload = {
@@ -353,17 +388,6 @@ const convertVideoFormat = async (req, res, handleErr) => {
     });
   } catch (e) {
     console.error("❌ Conversion error:", e);
-
-    // Track failure
-    if (!video.conversions) video.conversions = {};
-    video.conversions[targetFormat] = {
-      status: "failed",
-      error: e.message,
-      startedAt: video.conversions[targetFormat]?.startedAt || null,
-      finishedAt: Date.now(),
-    };
-    DB.save();
-
     return handleErr({
       status: 500,
       message: `Video conversion failed: ${e.message}`,
