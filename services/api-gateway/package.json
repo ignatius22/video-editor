@@ -23,6 +23,7 @@
     "cors": "^2.8.5",
     "cookie-parser": "^1.4.6",
     "prom-client": "^15.1.0"
+    "cookie-parser": "^1.4.6"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"
