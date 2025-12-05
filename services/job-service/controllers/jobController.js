@@ -1,13 +1,68 @@
 const jobHistoryService = require("../../shared/database/services/jobHistoryService");
+const { EventTypes } = require("../../shared/eventBus");
 
 // Will be initialized in server.js
 let bullQueue = null;
+let eventBus = null;
 
 /**
  * Initialize the queue (called from server.js)
  */
 function initQueue(queue) {
   bullQueue = queue;
+}
+
+/**
+ * Initialize the event bus (called from server.js)
+ */
+function initEventBus(bus) {
+  eventBus = bus;
+}
+
+/**
+ * Handle VIDEO_PROCESSING_REQUESTED event
+ * Called by event subscriber in server.js
+ */
+async function handleProcessingRequest(data, metadata) {
+  const { videoId, userId, operation, parameters } = data;
+
+  console.log(`[Job Controller] Handling processing request:`, {
+    videoId,
+    operation,
+    parameters,
+    correlationId: metadata.correlationId
+  });
+
+  try {
+    // Enqueue the job in Bull queue
+    const jobId = await bullQueue.enqueue({
+      type: operation,
+      videoId,
+      userId,
+      ...parameters,
+      correlationId: metadata.correlationId
+    });
+
+    console.log(`[Job Controller] Job enqueued: ${jobId} for video ${videoId}`);
+
+    // Publish JOB_CREATED event
+    if (eventBus && eventBus.connected) {
+      await eventBus.publish(EventTypes.JOB_CREATED, {
+        jobId,
+        videoId,
+        userId,
+        operation,
+        parameters
+      }, {
+        correlationId: metadata.correlationId
+      });
+    }
+
+    return jobId;
+  } catch (error) {
+    console.error('[Job Controller] Failed to enqueue job:', error);
+    throw error;
+  }
 }
 
 /**
@@ -146,6 +201,8 @@ const getJobHistory = async (req, res) => {
 
 module.exports = {
   initQueue,
+  initEventBus,
+  handleProcessingRequest,
   enqueueJob,
   getJobStatus,
   getQueueStats,

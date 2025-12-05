@@ -4,9 +4,17 @@ require('dotenv').config();
 
 const videoRoutes = require('./routes/videoRoutes');
 const { metricsMiddleware, metricsHandler } = require('../shared/middleware/metrics');
+const { EventBus, EventTypes } = require('../shared/eventBus');
+const videoService = require('../shared/database/services/videoService');
 
 const app = express();
 const PORT = process.env.VIDEO_SERVICE_PORT || 3002;
+
+// Initialize Event Bus
+const eventBus = new EventBus(process.env.RABBITMQ_URL, 'video-service');
+
+// Make event bus available to routes
+app.locals.eventBus = eventBus;
 
 // Middleware
 app.use(express.json());
@@ -58,12 +66,64 @@ app.use((err, req, res, next) => {
 });
 
 // Start server
-app.listen(PORT, () => {
-  console.log(`
+async function startServer() {
+  try {
+    // Connect to Event Bus
+    await eventBus.connect();
+    console.log('[Video Service] Event Bus connected');
+
+    // Subscribe to JOB_COMPLETED events
+    await eventBus.subscribe(EventTypes.JOB_COMPLETED, async (data, metadata) => {
+      console.log(`[Video Service] Received JOB_COMPLETED event:`, {
+        jobId: data.jobId,
+        videoId: data.videoId,
+        operation: data.type,
+        correlationId: metadata.correlationId
+      });
+
+      try {
+        // Update video operation status to completed
+        await videoService.updateOperationStatus(data.videoId, data.type, 'completed', data.result);
+        console.log(`[Video Service] Updated video ${data.videoId} operation ${data.type} to completed`);
+      } catch (error) {
+        console.error('[Video Service] Error updating video status:', error.message);
+        throw error; // Will trigger retry
+      }
+    });
+
+    // Subscribe to JOB_FAILED events
+    await eventBus.subscribe(EventTypes.JOB_FAILED, async (data, metadata) => {
+      console.log(`[Video Service] Received JOB_FAILED event:`, {
+        jobId: data.jobId,
+        videoId: data.videoId,
+        operation: data.type,
+        error: data.error,
+        correlationId: metadata.correlationId
+      });
+
+      try {
+        // Update video operation status to failed
+        await videoService.updateOperationStatus(data.videoId, data.type, 'failed', {
+          error: data.error,
+          stack: data.stack
+        });
+        console.log(`[Video Service] Updated video ${data.videoId} operation ${data.type} to failed`);
+      } catch (error) {
+        console.error('[Video Service] Error updating video status:', error.message);
+        throw error; // Will trigger retry
+      }
+    });
+
+    console.log('[Video Service] Subscribed to job completion events');
+
+    // Start HTTP server
+    app.listen(PORT, () => {
+      console.log(`
 ╔════════════════════════════════════════╗
 ║     VIDEO SERVICE                      ║
 ║     Port: ${PORT}                         ║
 ║     Status: Running ✅                  ║
+║     Event Bus: Connected ✅             ║
 ╚════════════════════════════════════════╝
 
 Endpoints:
@@ -75,15 +135,24 @@ Endpoints:
   GET    /asset           - Get video asset
   GET    /health          - Health check
   `);
-});
+    });
+  } catch (error) {
+    console.error('[Video Service] Failed to start:', error);
+    process.exit(1);
+  }
+}
+
+startServer();
 
 // Graceful shutdown
-process.on('SIGTERM', () => {
+process.on('SIGTERM', async () => {
   console.log('[Video Service] SIGTERM signal received: closing HTTP server');
+  await eventBus.close();
   process.exit(0);
 });
 
-process.on('SIGINT', () => {
+process.on('SIGINT', async () => {
   console.log('[Video Service] SIGINT signal received: closing HTTP server');
+  await eventBus.close();
   process.exit(0);
 });
