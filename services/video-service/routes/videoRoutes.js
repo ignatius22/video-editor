@@ -25,4 +25,10 @@ router.post('/convert', authMiddleware.authenticate, videoController.convertVide
 // Get video asset (original, thumbnail, resized, etc.)
 router.get('/asset', authMiddleware.authenticate, videoController.getVideoAsset);
 
+// Upload image
+router.post('/upload-image', authMiddleware.authenticate, videoController.uploadImage);
+
+// Crop image (queue job)
+router.post('/crop-image', authMiddleware.authenticate, videoController.cropImage);
+
 module.exports = router;

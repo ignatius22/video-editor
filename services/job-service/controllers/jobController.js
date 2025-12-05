@@ -20,14 +20,16 @@ function initEventBus(bus) {
 }
 
 /**
- * Handle VIDEO_PROCESSING_REQUESTED event
+ * Handle VIDEO_PROCESSING_REQUESTED or IMAGE_PROCESSING_REQUESTED event
  * Called by event subscriber in server.js
  */
 async function handleProcessingRequest(data, metadata) {
-  const { videoId, userId, operation, parameters } = data;
+  const { videoId, imageId, userId, operation, parameters } = data;
+  const resourceId = videoId || imageId;
+  const resourceType = videoId ? 'video' : 'image';
 
-  console.log(`[Job Controller] Handling processing request:`, {
-    videoId,
+  console.log(`[Job Controller] Handling ${resourceType} processing request:`, {
+    resourceId,
     operation,
     parameters,
     correlationId: metadata.correlationId
@@ -35,25 +37,41 @@ async function handleProcessingRequest(data, metadata) {
 
   try {
     // Enqueue the job in Bull queue
-    const jobId = await bullQueue.enqueue({
+    const jobData = {
       type: operation,
-      videoId,
       userId,
       ...parameters,
       correlationId: metadata.correlationId
-    });
+    };
 
-    console.log(`[Job Controller] Job enqueued: ${jobId} for video ${videoId}`);
+    // Add the appropriate ID field
+    if (videoId) {
+      jobData.videoId = videoId;
+    } else if (imageId) {
+      jobData.imageId = imageId;
+    }
+
+    const jobId = await bullQueue.enqueue(jobData);
+
+    console.log(`[Job Controller] Job enqueued: ${jobId} for ${resourceType} ${resourceId}`);
 
     // Publish JOB_CREATED event
     if (eventBus && eventBus.connected) {
-      await eventBus.publish(EventTypes.JOB_CREATED, {
+      const eventData = {
         jobId,
-        videoId,
         userId,
         operation,
         parameters
-      }, {
+      };
+
+      // Add the appropriate ID field to event
+      if (videoId) {
+        eventData.videoId = videoId;
+      } else if (imageId) {
+        eventData.imageId = imageId;
+      }
+
+      await eventBus.publish(EventTypes.JOB_CREATED, eventData, {
         correlationId: metadata.correlationId
       });
     }
