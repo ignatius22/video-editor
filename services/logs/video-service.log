@@ -1,0 +1,33 @@
+
+> video-service@1.0.0 start /Users/mac/Documents/workspace/UNCC/unix/video-editor-express/services/video-service
+> node server.js
+
+internal/modules/cjs/loader.js:357
+      throw err;
+      ^
+
+Error: Cannot find module '/Users/mac/Documents/workspace/UNCC/unix/video-editor-express/services/video-service/node_modules/debug/src/index.js'. Please verify that the package.json has a valid "main" entry
+    at tryPackage (internal/modules/cjs/loader.js:349:19)
+    at Function.Module._findPath (internal/modules/cjs/loader.js:562:18)
+    at Function.Module._resolveFilename (internal/modules/cjs/loader.js:917:27)
+    at Function.Module._load (internal/modules/cjs/loader.js:774:27)
+    at Module.require (internal/modules/cjs/loader.js:1003:19)
+    at require (internal/modules/cjs/helpers.js:107:18)
+    at Object.<anonymous> (/Users/mac/Documents/workspace/UNCC/unix/video-editor-express/services/video-service/node_modules/finalhandler/index.js:14:13)
+    at Module._compile (internal/modules/cjs/loader.js:1114:14)
+    at Object.Module._extensions..js (internal/modules/cjs/loader.js:1143:10)
+    at Module.load (internal/modules/cjs/loader.js:979:32) {
+  code: 'MODULE_NOT_FOUND',
+  path: '/Users/mac/Documents/workspace/UNCC/unix/video-editor-express/services/video-service/node_modules/debug/package.json',
+  requestPath: 'debug'
+}
+npm ERR! code ELIFECYCLE
+npm ERR! errno 1
+npm ERR! video-service@1.0.0 start: `node server.js`
+npm ERR! Exit status 1
+npm ERR! 
+npm ERR! Failed at the video-service@1.0.0 start script.
+npm ERR! This is probably not a problem with npm. There is likely additional logging output above.
+
+npm ERR! A complete log of this run can be found in:
+npm ERR!     /Users/mac/.npm/_logs/2025-12-05T10_46_02_054Z-debug.log

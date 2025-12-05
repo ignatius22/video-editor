@@ -12,8 +12,8 @@ const FF = require("../../lib/FF");
 
 let jobs;
 if (cluster.isPrimary) {
-  const JobQueue = require("../../lib/JobQueue");
-  jobs = new JobQueue();
+  const BullQueue = require("../../lib/BullQueue");
+  jobs = new BullQueue();
 }
 
 // Return the list of all the videos that a logged in user has uploaded
