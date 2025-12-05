@@ -5,8 +5,8 @@ const config = {
   host: process.env.DB_HOST || 'localhost',
   port: process.env.DB_PORT || 5432,
   database: process.env.DB_NAME || 'video_editor',
-  user: process.env.DB_USER || 'postgres',
-  password: process.env.DB_PASSWORD || 'postgres',
+  user: process.env.DB_USER || 'mac',
+  password: process.env.DB_PASSWORD || 'mac',
 
   // Connection pool settings
   max: 20, // Maximum number of clients in the pool
