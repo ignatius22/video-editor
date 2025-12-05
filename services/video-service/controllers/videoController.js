@@ -407,11 +407,84 @@ const getVideoAsset = async (req, res) => {
   }
 };
 
+/**
+ * Add watermark to video (queue job)
+ * POST /watermark
+ */
+const watermarkVideo = async (req, res) => {
+  const { videoId, text, x, y, fontSize, fontColor, opacity } = req.body;
+
+  // Validate required fields
+  if (!videoId || !text) {
+    return res.status(400).json({
+      error: "videoId and text are required!"
+    });
+  }
+
+  // Validate text length
+  if (text.length > 100) {
+    return res.status(400).json({
+      error: "Watermark text must be 100 characters or less."
+    });
+  }
+
+  try {
+    // Check if video exists
+    const video = await videoService.findByVideoId(videoId);
+    if (!video) {
+      return res.status(404).json({ error: "Video not found." });
+    }
+
+    // Build watermark options
+    const options = {};
+    if (x !== undefined) options.x = x;
+    if (y !== undefined) options.y = y;
+    if (fontSize !== undefined) options.fontSize = fontSize;
+    if (fontColor !== undefined) options.fontColor = fontColor;
+    if (opacity !== undefined) options.opacity = opacity;
+
+    // Add watermark operation to database
+    await videoService.addOperation(videoId, {
+      type: 'watermark',
+      status: 'pending',
+      parameters: { text, ...options }
+    });
+
+    // Publish VIDEO_PROCESSING_REQUESTED event
+    try {
+      await req.app.locals.eventBus.publish(EventTypes.VIDEO_PROCESSING_REQUESTED, {
+        videoId,
+        userId: req.userId,
+        operation: 'watermark',
+        parameters: { text, ...options }
+      });
+      console.log(`[Video Service] Published VIDEO_PROCESSING_REQUESTED event for videoId: ${videoId}`);
+
+      res.status(200).json({
+        status: "success",
+        message: "The video is now being watermarked!"
+      });
+    } catch (error) {
+      console.error("[Video Service] Failed to publish event:", error.message);
+      res.status(500).json({
+        error: "Failed to start video watermarking.",
+        details: "Event bus unavailable"
+      });
+    }
+  } catch (error) {
+    console.error("[Video Service] Watermark video error:", error);
+    res.status(500).json({
+      error: "Failed to start video watermarking."
+    });
+  }
+};
+
 module.exports = {
   getVideos,
   uploadVideo,
   extractAudio,
   resizeVideo,
   convertVideo,
-  getVideoAsset
+  getVideoAsset,
+  watermarkVideo
 };

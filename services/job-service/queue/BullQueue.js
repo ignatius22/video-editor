@@ -57,6 +57,11 @@ class BullQueue extends EventEmitter {
     this.queue.process('convert', this.CONCURRENCY, async (bullJob) => {
       return this.processConvert(bullJob);
     });
+
+    // Process watermark jobs
+    this.queue.process('watermark', this.CONCURRENCY, async (bullJob) => {
+      return this.processWatermark(bullJob);
+    });
   }
 
   setupBullEventListeners() {
@@ -329,6 +334,65 @@ class BullQueue extends EventEmitter {
     } catch (error) {
       console.error(`❌ Video conversion failed:`, error);
       util.deleteFile(convertedPath);
+
+      // Update operation status to failed
+      if (operation) {
+        await videoService.updateOperationStatus(operation.id, 'failed', null, error.message);
+      }
+
+      throw error;
+    }
+  }
+
+  async processWatermark(bullJob) {
+    const { videoId, text, x, y, fontSize, fontColor, opacity } = bullJob.data;
+
+    const video = await videoService.findByVideoId(videoId);
+    if (!video) {
+      throw new Error(`Video ${videoId} not found`);
+    }
+
+    const originalVideoPath = `./storage/${video.video_id}/original.${video.extension}`;
+    // Create filename-safe text for path
+    const safeText = text.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 20);
+    const targetVideoPath = `./storage/${video.video_id}/watermarked-${safeText}.${video.extension}`;
+
+    // Find the operation
+    const operation = await videoService.findOperation(videoId, 'watermark', { text });
+
+    try {
+      // Update progress: Starting
+      await bullJob.progress(10);
+
+      // Update operation status to processing
+      if (operation) {
+        await videoService.updateOperationStatus(operation.id, 'processing');
+      }
+
+      // Add watermark
+      await bullJob.progress(25);
+      const options = { x, y, fontSize, fontColor, opacity };
+      // Remove undefined values
+      Object.keys(options).forEach(key => options[key] === undefined && delete options[key]);
+      await FF.watermarkVideo(originalVideoPath, targetVideoPath, text, options);
+
+      // Update progress: Processing complete
+      await bullJob.progress(75);
+
+      // Update operation status to completed
+      if (operation) {
+        await videoService.updateOperationStatus(operation.id, 'completed', targetVideoPath);
+      }
+
+      // Complete
+      await bullJob.progress(100);
+
+      console.log(`✅ Video watermarked with text: "${text}"`);
+
+      return JSON.stringify({ text, ...options });
+    } catch (error) {
+      console.error(`❌ Video watermark failed:`, error);
+      util.deleteFile(targetVideoPath);
 
       // Update operation status to failed
       if (operation) {
