@@ -6,6 +6,8 @@ const jobRoutes = require('./routes/jobRoutes');
 const jobController = require('./controllers/jobController');
 const { metricsMiddleware, metricsHandler, updateQueueMetrics } = require('../shared/middleware/metrics');
 const { EventBus, EventTypes } = require('../shared/eventBus');
+const { HealthCheck, checkPostgres, checkRedis, checkRabbitMQ, checkBullQueue } = require('../shared/resilience');
+const db = require('../shared/database/db');
 
 const app = express();
 const PORT = process.env.JOB_SERVICE_PORT || 3003;
@@ -16,6 +18,9 @@ jobController.initQueue(bullQueue);
 
 // Initialize Event Bus
 const eventBus = new EventBus(process.env.RABBITMQ_URL, 'job-service');
+
+// Initialize Health Check
+const healthCheck = new HealthCheck('job-service');
 
 // Make event bus available to routes and controllers
 app.locals.eventBus = eventBus;
@@ -42,14 +47,26 @@ app.use((req, res, next) => {
 // Metrics endpoint (for Prometheus scraping)
 app.get('/metrics', metricsHandler);
 
-// Health check endpoint
-app.get('/health', (req, res) => {
-  res.json({
-    service: 'job-service',
-    status: 'healthy',
-    queue: 'connected',
-    timestamp: new Date().toISOString()
-  });
+// Liveness probe
+app.get('/health', async (req, res) => {
+  const liveness = await healthCheck.liveness();
+  res.json(liveness);
+});
+
+// Readiness probe
+app.get('/health/ready', async (req, res) => {
+  try {
+    const readiness = await healthCheck.readiness();
+    const statusCode = readiness.status === 'healthy' ? 200 : 503;
+    res.status(statusCode).json(readiness);
+  } catch (error) {
+    res.status(503).json({
+      service: 'job-service',
+      status: 'unhealthy',
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
 });
 
 // Mount routes
@@ -81,6 +98,27 @@ async function startServer() {
 
     // Pass event bus to Bull Queue for job event publishing
     bullQueue.setEventBus(eventBus);
+
+    // Register health checks
+    healthCheck.register('database', async () => {
+      await checkPostgres(db.pool);
+    });
+
+    healthCheck.register('redis', async () => {
+      // Bull Queue uses Redis internally
+      const redis = bullQueue.queue.client;
+      await checkRedis(redis);
+    });
+
+    healthCheck.register('rabbitmq', async () => {
+      await checkRabbitMQ(eventBus);
+    });
+
+    healthCheck.register('queue', async () => {
+      await checkBullQueue(bullQueue.queue);
+    }, { critical: false }); // Non-critical: service can start with queue backlog
+
+    console.log('[Job Service] Health checks registered');
 
     // Subscribe to VIDEO_PROCESSING_REQUESTED events
     await eventBus.subscribe(EventTypes.VIDEO_PROCESSING_REQUESTED, async (data, metadata) => {
