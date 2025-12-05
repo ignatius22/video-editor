@@ -407,11 +407,178 @@ const getVideoAsset = async (req, res) => {
   }
 };
 
+/**
+ * Upload an image file
+ * POST /upload-image
+ */
+const uploadImage = async (req, res) => {
+  const specifiedFileName = req.headers.filename;
+
+  if (!specifiedFileName) {
+    return res.status(400).json({
+      error: "Filename header is required."
+    });
+  }
+
+  const extension = path.extname(specifiedFileName).substring(1).toLowerCase();
+  const name = path.parse(specifiedFileName).name;
+  const imageId = crypto.randomBytes(4).toString("hex");
+
+  const FORMATS_SUPPORTED = ["jpg", "jpeg", "png", "webp", "gif"];
+  if (!FORMATS_SUPPORTED.includes(extension)) {
+    return res.status(400).json({
+      error: "Only these formats are allowed: jpg, jpeg, png, webp, gif"
+    });
+  }
+
+  try {
+    const imageDir = path.join(__dirname, `../../../storage/${imageId}`);
+    await fs.mkdir(imageDir, { recursive: true });
+
+    const fullPath = path.join(imageDir, `original.${extension}`);
+    const fileStream = fsSync.createWriteStream(fullPath);
+
+    // Pipe request to file safely
+    await pipeline(req, fileStream);
+
+    // Get image dimensions
+    const dimensions = await FF.getDimensions(fullPath);
+
+    // Save to database (reuse video service for now, could create imageService)
+    await videoService.createVideo({
+      videoId: imageId,
+      userId: req.userId,
+      name,
+      extension,
+      dimensions,
+      metadata: { type: 'image' }
+    });
+
+    // Publish IMAGE_UPLOADED event
+    try {
+      await req.app.locals.eventBus.publish(EventTypes.IMAGE_UPLOADED, {
+        imageId,
+        userId: req.userId,
+        name,
+        extension,
+        dimensions
+      });
+      console.log(`[Video Service] Published IMAGE_UPLOADED event for imageId: ${imageId}`);
+    } catch (eventError) {
+      console.error('[Video Service] Failed to publish IMAGE_UPLOADED event:', eventError.message);
+    }
+
+    res.status(201).json({
+      status: "success",
+      message: "The image was uploaded successfully!",
+      imageId,
+      name,
+      dimensions
+    });
+  } catch (e) {
+    console.error("[Video Service] Image upload failed:", e);
+
+    // Cleanup
+    try {
+      await fs.rm(path.join(__dirname, `../../../storage/${imageId}`), {
+        recursive: true,
+        force: true
+      });
+    } catch {}
+
+    res.status(500).json({
+      error: "Failed to upload image.",
+      details: e.message
+    });
+  }
+};
+
+/**
+ * Crop an image
+ * POST /crop-image
+ */
+const cropImage = async (req, res) => {
+  const { imageId, width, height, x, y } = req.body;
+
+  // Validate required fields
+  if (!imageId || !width || !height) {
+    return res.status(400).json({
+      error: "imageId, width, and height are required!"
+    });
+  }
+
+  try {
+    // Check if image exists
+    const image = await videoService.findByVideoId(imageId);
+    if (!image) {
+      return res.status(404).json({ error: "Image not found." });
+    }
+
+    // Check if it's actually an image
+    if (!image.metadata || image.metadata.type !== 'image') {
+      return res.status(400).json({ error: "This endpoint is for images only." });
+    }
+
+    // Validate crop dimensions
+    if (width <= 0 || height <= 0) {
+      return res.status(400).json({
+        error: "Width and height must be positive numbers."
+      });
+    }
+
+    // Validate crop doesn't exceed original dimensions
+    const cropX = x || 0;
+    const cropY = y || 0;
+
+    if (cropX + width > image.dimensions.width || cropY + height > image.dimensions.height) {
+      return res.status(400).json({
+        error: `Crop area exceeds image dimensions. Image is ${image.dimensions.width}x${image.dimensions.height}.`
+      });
+    }
+
+    // Add crop operation to database
+    await videoService.addOperation(imageId, {
+      type: 'crop',
+      status: 'pending',
+      parameters: { width, height, x: cropX, y: cropY }
+    });
+
+    // Publish IMAGE_PROCESSING_REQUESTED event (replaces HTTP call)
+    try {
+      await req.app.locals.eventBus.publish(EventTypes.IMAGE_PROCESSING_REQUESTED, {
+        imageId,
+        userId: req.userId,
+        operation: 'crop',
+        parameters: { width, height, x: cropX, y: cropY }
+      });
+      console.log(`[Video Service] Published IMAGE_PROCESSING_REQUESTED event for imageId: ${imageId}`);
+
+      res.status(200).json({
+        status: "success",
+        message: "The image is now being cropped!"
+      });
+    } catch (error) {
+      console.error("[Video Service] Failed to publish event:", error.message);
+      res.status(500).json({
+        error: "Failed to start image crop.",
+        details: "Event bus unavailable"
+      });
+    }
+  } catch (error) {
+    console.error("[Video Service] Crop image error:", error);
+    res.status(500).json({
+      error: "Failed to start image crop."
+    });
+  }
+};
+
 module.exports = {
   getVideos,
   uploadVideo,
   extractAudio,
   resizeVideo,
   convertVideo,
-  getVideoAsset
+  getVideoAsset,
+  uploadImage,
+  cropImage
 };

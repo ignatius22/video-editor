@@ -139,6 +139,25 @@ async function startServer() {
 
     console.log('[Job Service] Subscribed to VIDEO_PROCESSING_REQUESTED events');
 
+    // Subscribe to IMAGE_PROCESSING_REQUESTED events
+    await eventBus.subscribe(EventTypes.IMAGE_PROCESSING_REQUESTED, async (data, metadata) => {
+      console.log(`[Job Service] Received IMAGE_PROCESSING_REQUESTED event:`, {
+        imageId: data.imageId,
+        operation: data.operation,
+        correlationId: metadata.correlationId
+      });
+
+      try {
+        // Enqueue the job
+        await jobController.handleProcessingRequest(data, metadata);
+      } catch (error) {
+        console.error('[Job Service] Error handling image processing request:', error.message);
+        throw error; // Will trigger retry mechanism
+      }
+    });
+
+    console.log('[Job Service] Subscribed to IMAGE_PROCESSING_REQUESTED events');
+
     // Start HTTP server
     app.listen(PORT, () => {
       console.log(`

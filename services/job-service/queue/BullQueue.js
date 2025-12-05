@@ -57,6 +57,11 @@ class BullQueue extends EventEmitter {
     this.queue.process('convert', this.CONCURRENCY, async (bullJob) => {
       return this.processConvert(bullJob);
     });
+
+    // Process image crop jobs
+    this.queue.process('crop', this.CONCURRENCY, async (bullJob) => {
+      return this.processCrop(bullJob);
+    });
   }
 
   setupBullEventListeners() {
@@ -329,6 +334,60 @@ class BullQueue extends EventEmitter {
     } catch (error) {
       console.error(`❌ Video conversion failed:`, error);
       util.deleteFile(convertedPath);
+
+      // Update operation status to failed
+      if (operation) {
+        await videoService.updateOperationStatus(operation.id, 'failed', null, error.message);
+      }
+
+      throw error;
+    }
+  }
+
+  async processCrop(bullJob) {
+    const { imageId, width, height, x, y } = bullJob.data;
+
+    const image = await videoService.findByVideoId(imageId);
+    if (!image) {
+      throw new Error(`Image ${imageId} not found`);
+    }
+
+    const originalImagePath = `./storage/${image.video_id}/original.${image.extension}`;
+    const targetImagePath = `./storage/${image.video_id}/cropped-${width}x${height}.${image.extension}`;
+
+    // Find the operation
+    const operation = await videoService.findOperation(imageId, 'crop', { width, height, x, y });
+
+    try {
+      // Update progress: Starting
+      await bullJob.progress(10);
+
+      // Update operation status to processing
+      if (operation) {
+        await videoService.updateOperationStatus(operation.id, 'processing');
+      }
+
+      // Crop image
+      await bullJob.progress(25);
+      await FF.cropImage(originalImagePath, targetImagePath, width, height, x || 0, y || 0);
+
+      // Update progress: Processing complete
+      await bullJob.progress(75);
+
+      // Update operation status to completed
+      if (operation) {
+        await videoService.updateOperationStatus(operation.id, 'completed', targetImagePath);
+      }
+
+      // Complete
+      await bullJob.progress(100);
+
+      console.log(`✅ Image cropped to ${width}x${height} at (${x || 0}, ${y || 0})`);
+
+      return JSON.stringify({ width, height, x: x || 0, y: y || 0 });
+    } catch (error) {
+      console.error(`❌ Image crop failed:`, error);
+      util.deleteFile(targetImagePath);
 
       // Update operation status to failed
       if (operation) {
