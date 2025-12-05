@@ -6,12 +6,17 @@ const videoRoutes = require('./routes/videoRoutes');
 const { metricsMiddleware, metricsHandler } = require('../shared/middleware/metrics');
 const { EventBus, EventTypes } = require('../shared/eventBus');
 const videoService = require('../shared/database/services/videoService');
+const { HealthCheck, checkPostgres, checkRabbitMQ } = require('../shared/resilience');
+const db = require('../shared/database/db');
 
 const app = express();
 const PORT = process.env.VIDEO_SERVICE_PORT || 3002;
 
 // Initialize Event Bus
 const eventBus = new EventBus(process.env.RABBITMQ_URL, 'video-service');
+
+// Initialize Health Check
+const healthCheck = new HealthCheck('video-service');
 
 // Make event bus available to routes
 app.locals.eventBus = eventBus;
@@ -36,13 +41,26 @@ app.use((req, res, next) => {
 // Metrics endpoint (for Prometheus scraping)
 app.get('/metrics', metricsHandler);
 
-// Health check endpoint
-app.get('/health', (req, res) => {
-  res.json({
-    service: 'video-service',
-    status: 'healthy',
-    timestamp: new Date().toISOString()
-  });
+// Liveness probe - basic check that service is running
+app.get('/health', async (req, res) => {
+  const liveness = await healthCheck.liveness();
+  res.json(liveness);
+});
+
+// Readiness probe - deep check including dependencies
+app.get('/health/ready', async (req, res) => {
+  try {
+    const readiness = await healthCheck.readiness();
+    const statusCode = readiness.status === 'healthy' ? 200 : 503;
+    res.status(statusCode).json(readiness);
+  } catch (error) {
+    res.status(503).json({
+      service: 'video-service',
+      status: 'unhealthy',
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
 });
 
 // Mount routes
@@ -71,6 +89,17 @@ async function startServer() {
     // Connect to Event Bus
     await eventBus.connect();
     console.log('[Video Service] Event Bus connected');
+
+    // Register health checks
+    healthCheck.register('database', async () => {
+      await checkPostgres(db.pool);
+    });
+
+    healthCheck.register('rabbitmq', async () => {
+      await checkRabbitMQ(eventBus);
+    });
+
+    console.log('[Video Service] Health checks registered');
 
     // Subscribe to JOB_COMPLETED events
     await eventBus.subscribe(EventTypes.JOB_COMPLETED, async (data, metadata) => {
