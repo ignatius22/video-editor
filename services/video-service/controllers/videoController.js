@@ -408,6 +408,23 @@ const getVideoAsset = async (req, res) => {
 };
 
 /**
+ * Add watermark to video (queue job)
+ * POST /watermark
+ */
+const watermarkVideo = async (req, res) => {
+  const { videoId, text, x, y, fontSize, fontColor, opacity } = req.body;
+
+  // Validate required fields
+  if (!videoId || !text) {
+    return res.status(400).json({
+      error: "videoId and text are required!"
+    });
+  }
+
+  // Validate text length
+  if (text.length > 100) {
+    return res.status(400).json({
+      error: "Watermark text must be 100 characters or less."
  * Trim video (queue job)
  * POST /trim
  */
@@ -537,6 +554,19 @@ const cropImage = async (req, res) => {
       return res.status(404).json({ error: "Video not found." });
     }
 
+    // Build watermark options
+    const options = {};
+    if (x !== undefined) options.x = x;
+    if (y !== undefined) options.y = y;
+    if (fontSize !== undefined) options.fontSize = fontSize;
+    if (fontColor !== undefined) options.fontColor = fontColor;
+    if (opacity !== undefined) options.opacity = opacity;
+
+    // Add watermark operation to database
+    await videoService.addOperation(videoId, {
+      type: 'watermark',
+      status: 'pending',
+      parameters: { text, ...options }
     // Add trim operation to database
     await videoService.addOperation(videoId, {
       type: 'trim',
@@ -549,6 +579,8 @@ const cropImage = async (req, res) => {
       await req.app.locals.eventBus.publish(EventTypes.VIDEO_PROCESSING_REQUESTED, {
         videoId,
         userId: req.userId,
+        operation: 'watermark',
+        parameters: { text, ...options }
         operation: 'trim',
         parameters: { startTime, endTime }
       });
@@ -556,6 +588,7 @@ const cropImage = async (req, res) => {
 
       res.status(200).json({
         status: "success",
+        message: "The video is now being watermarked!"
         message: "The video is now being trimmed!"
     // Check if image exists
     const image = await videoService.findByVideoId(imageId);
@@ -609,11 +642,15 @@ const cropImage = async (req, res) => {
     } catch (error) {
       console.error("[Video Service] Failed to publish event:", error.message);
       res.status(500).json({
+        error: "Failed to start video watermarking.",
         error: "Failed to start image crop.",
         details: "Event bus unavailable"
       });
     }
   } catch (error) {
+    console.error("[Video Service] Watermark video error:", error);
+    res.status(500).json({
+      error: "Failed to start video watermarking."
     console.error("[Video Service] Crop image error:", error);
     res.status(500).json({
       error: "Failed to start image crop."
@@ -701,6 +738,7 @@ module.exports = {
   resizeVideo,
   convertVideo,
   getVideoAsset,
+  watermarkVideo
   trimVideo
   uploadImage,
   cropImage,

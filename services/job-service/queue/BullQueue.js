@@ -58,6 +58,9 @@ class BullQueue extends EventEmitter {
       return this.processConvert(bullJob);
     });
 
+    // Process watermark jobs
+    this.queue.process('watermark', this.CONCURRENCY, async (bullJob) => {
+      return this.processWatermark(bullJob);
     // Process trim jobs
     this.queue.process('trim', this.CONCURRENCY, async (bullJob) => {
       return this.processTrim(bullJob);
@@ -352,6 +355,8 @@ class BullQueue extends EventEmitter {
     }
   }
 
+  async processWatermark(bullJob) {
+    const { videoId, text, x, y, fontSize, fontColor, opacity } = bullJob.data;
   async processTrim(bullJob) {
     const { videoId, startTime, endTime } = bullJob.data;
 
@@ -361,6 +366,12 @@ class BullQueue extends EventEmitter {
     }
 
     const originalVideoPath = `./storage/${video.video_id}/original.${video.extension}`;
+    // Create filename-safe text for path
+    const safeText = text.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 20);
+    const targetVideoPath = `./storage/${video.video_id}/watermarked-${safeText}.${video.extension}`;
+
+    // Find the operation
+    const operation = await videoService.findOperation(videoId, 'watermark', { text });
     const targetVideoPath = `./storage/${video.video_id}/trimmed-${startTime}-${endTime}.${video.extension}`;
 
     // Find the operation
@@ -388,6 +399,12 @@ class BullQueue extends EventEmitter {
         await videoService.updateOperationStatus(operation.id, 'processing');
       }
 
+      // Add watermark
+      await bullJob.progress(25);
+      const options = { x, y, fontSize, fontColor, opacity };
+      // Remove undefined values
+      Object.keys(options).forEach(key => options[key] === undefined && delete options[key]);
+      await FF.watermarkVideo(originalVideoPath, targetVideoPath, text, options);
       // Trim video
       await bullJob.progress(25);
       await FF.trimVideo(originalVideoPath, targetVideoPath, startTime, endTime);
@@ -407,6 +424,12 @@ class BullQueue extends EventEmitter {
       // Complete
       await bullJob.progress(100);
 
+      console.log(`✅ Video watermarked with text: "${text}"`);
+
+      return JSON.stringify({ text, ...options });
+    } catch (error) {
+      console.error(`❌ Video watermark failed:`, error);
+      util.deleteFile(targetVideoPath);
       console.log(`✅ Video trimmed from ${startTime}s to ${endTime}s`);
 
       return JSON.stringify({ startTime, endTime, duration: endTime - startTime });

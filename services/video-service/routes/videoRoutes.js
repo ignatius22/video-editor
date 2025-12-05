@@ -22,6 +22,8 @@ router.post('/resize', authMiddleware.authenticate, videoController.resizeVideo)
 // Convert video format (queue job)
 router.post('/convert', authMiddleware.authenticate, videoController.convertVideo);
 
+// Add watermark to video (queue job)
+router.post('/watermark', authMiddleware.authenticate, videoController.watermarkVideo);
 // Trim video (queue job)
 router.post('/trim', authMiddleware.authenticate, videoController.trimVideo);
 
