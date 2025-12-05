@@ -5,59 +5,52 @@ const fs = require("fs").promises;
 const { promisify } = require("util");
 const stream = require("stream");
 const pipeline = promisify(stream.pipeline);
-const axios = require("axios");
 
 const videoService = require("../../shared/database/services/videoService");
 const FF = require("../../../lib/FF");
 const util = require("../../../lib/util");
 const { EventTypes } = require("../../shared/eventBus");
 
-// Job Service URL (can be configured via env - kept for backward compatibility)
-const JOB_SERVICE_URL = process.env.JOB_SERVICE_URL || 'http://localhost:3003';
-
 /**
- * Get all videos for logged-in user
- * GET /videos
+ * ----------------------------------------
+ * GET USER VIDEOS
+ * ----------------------------------------
  */
 const getVideos = async (req, res) => {
   try {
     const videos = await videoService.getUserVideos(req.userId, {
       limit: 100,
       offset: 0,
-      orderBy: 'created_at',
-      order: 'DESC'
+      orderBy: "created_at",
+      order: "DESC",
     });
 
     res.status(200).json(videos);
   } catch (error) {
     console.error("[Video Service] Get videos error:", error);
-    res.status(500).json({
-      error: "Failed to retrieve videos."
-    });
+    res.status(500).json({ error: "Failed to retrieve videos." });
   }
 };
 
 /**
- * Upload a video file
- * POST /upload
+ * ----------------------------------------
+ * UPLOAD VIDEO
+ * ----------------------------------------
  */
 const uploadVideo = async (req, res) => {
   const specifiedFileName = req.headers.filename;
 
   if (!specifiedFileName) {
-    return res.status(400).json({
-      error: "Filename header is required."
-    });
+    return res.status(400).json({ error: "Filename header is required." });
   }
 
   const extension = path.extname(specifiedFileName).substring(1).toLowerCase();
   const name = path.parse(specifiedFileName).name;
   const videoId = crypto.randomBytes(4).toString("hex");
 
-  const FORMATS_SUPPORTED = ["mov", "mp4"];
-  if (!FORMATS_SUPPORTED.includes(extension)) {
+  if (!["mp4", "mov"].includes(extension)) {
     return res.status(400).json({
-      error: "Only these formats are allowed: mov, mp4"
+      error: "Only these formats are allowed: mov, mp4",
     });
   }
 
@@ -68,47 +61,42 @@ const uploadVideo = async (req, res) => {
     const fullPath = path.join(videoDir, `original.${extension}`);
     const fileStream = fsSync.createWriteStream(fullPath);
 
-    // Pipe request to file safely
     await pipeline(req, fileStream);
 
-    // Generate thumbnail
+    // Thumbnail + dimensions
     const thumbnailPath = path.join(videoDir, "thumbnail.jpg");
     await FF.makeThumbnail(fullPath, thumbnailPath);
-
-    // Get video dimensions
     const dimensions = await FF.getDimensions(fullPath);
 
-    // Save to database
+    // DB entry
     await videoService.createVideo({
       videoId,
       userId: req.userId,
       name,
       extension,
       dimensions,
-      metadata: { extractedAudio: false }
+      metadata: { extractedAudio: false },
     });
 
-    // Publish VIDEO_UPLOADED event
+    // Publish event
     try {
       await req.app.locals.eventBus.publish(EventTypes.VIDEO_UPLOADED, {
         videoId,
         userId: req.userId,
         name,
         extension,
-        dimensions
+        dimensions,
       });
-      console.log(`[Video Service] Published VIDEO_UPLOADED event for videoId: ${videoId}`);
-    } catch (eventError) {
-      console.error('[Video Service] Failed to publish VIDEO_UPLOADED event:', eventError.message);
-      // Don't fail the request if event publishing fails
+    } catch (e) {
+      console.error("[Video Service] Failed publishing event:", e.message);
     }
 
     res.status(201).json({
       status: "success",
-      message: "The file was uploaded successfully!",
+      message: "Video uploaded successfully!",
       videoId,
       name,
-      dimensions
+      dimensions,
     });
   } catch (e) {
     console.error("[Video Service] Upload failed:", e);
@@ -117,318 +105,343 @@ const uploadVideo = async (req, res) => {
     try {
       await fs.rm(path.join(__dirname, `../../../storage/${videoId}`), {
         recursive: true,
-        force: true
+        force: true,
       });
     } catch {}
 
     res.status(500).json({
       error: "Failed to upload video.",
-      details: e.message
+      details: e.message,
     });
   }
 };
 
 /**
- * Extract audio from video
- * POST /extract-audio
+ * ----------------------------------------
+ * EXTRACT AUDIO
+ * ----------------------------------------
  */
 const extractAudio = async (req, res) => {
   const { videoId } = req.body;
 
   try {
     const video = await videoService.findByVideoId(videoId);
+    if (!video) return res.status(404).json({ error: "Video not found." });
 
-    if (!video) {
-      return res.status(404).json({ error: "Video not found." });
-    }
-
-    if (video.metadata && video.metadata.extractedAudio) {
+    if (video.metadata?.extractedAudio) {
       return res.status(400).json({
-        error: "The audio has already been extracted for this video."
+        error: "Audio already extracted for this video.",
       });
     }
 
-    const originalVideoPath = path.join(
+    const source = path.join(
       __dirname,
       `../../../storage/${videoId}/original.${video.extension}`
     );
-    const targetAudioPath = path.join(
+    const target = path.join(
       __dirname,
       `../../../storage/${videoId}/audio.aac`
     );
 
-    await FF.extractAudio(originalVideoPath, targetAudioPath);
+    await FF.extractAudio(source, target);
 
-    // Update metadata
     await videoService.updateVideo(videoId, {
-      metadata: { ...video.metadata, extractedAudio: true }
+      metadata: { ...video.metadata, extractedAudio: true },
     });
 
     res.status(200).json({
       status: "success",
-      message: "The audio was extracted successfully!"
+      message: "Audio extracted successfully!",
     });
   } catch (e) {
     console.error("[Video Service] Extract audio error:", e);
     res.status(500).json({
       error: "Failed to extract audio.",
-      details: e.message
+      details: e.message,
     });
   }
 };
 
 /**
- * Resize video (queue job)
- * POST /resize
+ * ----------------------------------------
+ * RESIZE VIDEO
+ * ----------------------------------------
  */
 const resizeVideo = async (req, res) => {
   const { videoId, width, height } = req.body;
 
   try {
-    // Check if video exists
     const video = await videoService.findByVideoId(videoId);
-    if (!video) {
-      return res.status(404).json({ error: "Video not found." });
-    }
+    if (!video) return res.status(404).json({ error: "Video not found." });
 
-    // Add resize operation to database
     await videoService.addOperation(videoId, {
-      type: 'resize',
-      status: 'pending',
-      parameters: { width, height }
+      type: "resize",
+      status: "pending",
+      parameters: { width, height },
     });
 
-    // Publish VIDEO_PROCESSING_REQUESTED event (replaces HTTP call)
-    try {
-      await req.app.locals.eventBus.publish(EventTypes.VIDEO_PROCESSING_REQUESTED, {
+    await req.app.locals.eventBus.publish(
+      EventTypes.VIDEO_PROCESSING_REQUESTED,
+      {
         videoId,
         userId: req.userId,
-        operation: 'resize',
-        parameters: { width, height }
-      });
-      console.log(`[Video Service] Published VIDEO_PROCESSING_REQUESTED event for videoId: ${videoId}`);
+        operation: "resize",
+        parameters: { width, height },
+      }
+    );
 
-      res.status(200).json({
-        status: "success",
-        message: "The video is now being processed!"
-      });
-    } catch (error) {
-      console.error("[Video Service] Failed to publish event:", error.message);
-      res.status(500).json({
-        error: "Failed to start video resize.",
-        details: "Event bus unavailable"
-      });
-    }
-  } catch (error) {
-    console.error("[Video Service] Resize video error:", error);
-    res.status(500).json({
-      error: "Failed to start video resize."
+    res.status(200).json({
+      status: "success",
+      message: "Video resize started.",
     });
+  } catch (error) {
+    console.error("[Video Service] Resize error:", error);
+    res.status(500).json({ error: "Failed to start resize job." });
   }
 };
 
 /**
- * Convert video format (queue job)
- * POST /convert
+ * ----------------------------------------
+ * CONVERT VIDEO FORMAT
+ * ----------------------------------------
  */
 const convertVideo = async (req, res) => {
   const { videoId, targetFormat } = req.body;
 
-  const supportedFormats = ["mp4", "mov", "avi", "webm", "mkv", "flv"];
+  if (!targetFormat)
+    return res.status(400).json({ error: "targetFormat is required." });
 
-  if (!targetFormat) {
-    return res.status(400).json({ error: "Target format is required!" });
-  }
-
-  if (!supportedFormats.includes(targetFormat.toLowerCase())) {
+  const supported = ["mp4", "mov", "avi", "webm", "mkv", "flv"];
+  if (!supported.includes(targetFormat.toLowerCase())) {
     return res.status(400).json({
-      error: `Unsupported format. Supported formats: ${supportedFormats.join(", ")}`
+      error: `Unsupported format. Supported: ${supported.join(", ")}`,
     });
   }
 
   try {
     const video = await videoService.findByVideoId(videoId);
+    if (!video) return res.status(404).json({ error: "Video not found." });
 
-    if (!video) {
-      return res.status(404).json({ error: "Video not found!" });
-    }
-
-    // Already same format?
-    if (video.extension.toLowerCase() === targetFormat.toLowerCase()) {
+    if (video.extension === targetFormat) {
       return res.status(400).json({
-        error: `Video is already in ${targetFormat.toUpperCase()} format!`
+        error: `Already in ${targetFormat.toUpperCase()} format.`,
       });
     }
 
-    // Add conversion operation to database
+    const parameters = {
+      targetFormat: targetFormat.toLowerCase(),
+      originalFormat: video.extension.toLowerCase(),
+    };
+
     await videoService.addOperation(videoId, {
-      type: 'convert',
-      status: 'pending',
-      parameters: {
-        targetFormat: targetFormat.toLowerCase(),
-        originalFormat: video.extension.toLowerCase()
-      }
+      type: "convert",
+      status: "pending",
+      parameters,
     });
 
-    // Publish VIDEO_PROCESSING_REQUESTED event (replaces HTTP call)
-    try {
-      await req.app.locals.eventBus.publish(EventTypes.VIDEO_PROCESSING_REQUESTED, {
+    await req.app.locals.eventBus.publish(
+      EventTypes.VIDEO_PROCESSING_REQUESTED,
+      {
         videoId,
         userId: req.userId,
-        operation: 'convert',
-        parameters: {
-          targetFormat: targetFormat.toLowerCase(),
-          originalFormat: video.extension.toLowerCase()
-        }
-      });
-      console.log(`[Video Service] Published VIDEO_PROCESSING_REQUESTED event for videoId: ${videoId}`);
+        operation: "convert",
+        parameters,
+      }
+    );
 
-      res.status(200).json({
-        status: "success",
-        message: `Video conversion to ${targetFormat.toUpperCase()} has started.`
-      });
-    } catch (error) {
-      console.error("[Video Service] Failed to publish event:", error.message);
-      res.status(500).json({
-        error: "Failed to start video conversion.",
-        details: "Event bus unavailable"
-      });
-    }
+    res.status(200).json({
+      status: "success",
+      message: `Conversion to ${targetFormat.toUpperCase()} started.`,
+    });
   } catch (e) {
-    console.error("[Video Service] Convert video error:", e);
+    console.error("[Video Service] Convert error:", e);
     res.status(500).json({
       error: "Video conversion failed.",
-      details: e.message
+      details: e.message,
     });
   }
 };
 
 /**
- * Get video asset (original, thumbnail, resized, converted, audio)
- * GET /asset
+ * ----------------------------------------
+ * GET ASSET (THUMBNAIL, AUDIO, ORIGINAL, RESIZED, CONVERTED)
+ * ----------------------------------------
  */
 const getVideoAsset = async (req, res) => {
   const { videoId, type, format, dimensions } = req.query;
 
   try {
     const video = await videoService.findByVideoId(videoId);
-    if (!video) {
-      return res.status(404).json({ error: "Video not found!" });
-    }
+    if (!video) return res.status(404).json({ error: "Video not found." });
 
     let filePath;
-    let filename;
     let extension;
 
     switch (type) {
       case "thumbnail":
         extension = "jpg";
-        filename = `${video.name}-thumbnail.${extension}`;
-        filePath = path.join(__dirname, `../../../storage/${videoId}/thumbnail.${extension}`);
+        filePath = path.join(
+          __dirname,
+          `../../../storage/${videoId}/thumbnail.jpg`
+        );
         break;
 
       case "audio":
         extension = "aac";
-        filename = `${video.name}-audio.${extension}`;
-        filePath = path.join(__dirname, `../../../storage/${videoId}/audio.${extension}`);
+        filePath = path.join(
+          __dirname,
+          `../../../storage/${videoId}/audio.aac`
+        );
         break;
 
       case "resize":
         extension = video.extension;
-        filename = `${video.name}-${dimensions}.${extension}`;
-        filePath = path.join(__dirname, `../../../storage/${videoId}/${dimensions}.${extension}`);
+        filePath = path.join(
+          __dirname,
+          `../../../storage/${videoId}/${dimensions}.${extension}`
+        );
         break;
 
       case "original":
         extension = video.extension;
-        filename = `${video.name}.${extension}`;
-        filePath = path.join(__dirname, `../../../storage/${videoId}/original.${extension}`);
+        filePath = path.join(
+          __dirname,
+          `../../../storage/${videoId}/original.${extension}`
+        );
         break;
 
       case "converted":
         extension = format || "mp4";
-        filename = `${video.name}-converted.${extension}`;
-        filePath = path.join(__dirname, `../../../storage/${videoId}/converted.${extension}`);
-
-        // Check conversion status from operations table
-        const convertOperation = await videoService.findOperation(
-          videoId,
-          'convert',
-          { targetFormat: extension, originalFormat: video.extension.toLowerCase() }
+        filePath = path.join(
+          __dirname,
+          `../../../storage/${videoId}/converted.${extension}`
         );
 
-        if (!convertOperation || convertOperation.status !== 'completed') {
+        const op = await videoService.findOperation(videoId, "convert", {
+          targetFormat: extension.toLowerCase(),
+        });
+
+        if (!op || op.status !== "completed") {
           return res.status(400).json({
-            error: `Conversion to ${extension.toUpperCase()} not finished yet.`
+            error: `Conversion to ${extension.toUpperCase()} not complete.`,
           });
         }
         break;
 
       default:
-        return res.status(400).json({
-          error: "Invalid asset type requested."
-        });
+        return res.status(400).json({ error: "Invalid asset type." });
     }
 
-    try {
-      await fs.access(filePath);
-      const stat = await fs.stat(filePath);
-      const mimeType = util.getMimeFromExtension(extension);
+    await fs.access(filePath);
+    const stat = await fs.stat(filePath);
+    const readStream = fsSync.createReadStream(filePath);
 
-      const fileStream = fsSync.createReadStream(filePath);
+    res.setHeader("Content-Type", util.getMimeFromExtension(extension));
+    res.setHeader("Content-Length", stat.size);
 
-      // Close the stream if client disconnects
-      res.on("close", () => {
-        fileStream.destroy();
-      });
-
-      if (type !== "thumbnail") {
-        res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
-      }
-      res.setHeader("Content-Type", mimeType);
-      res.setHeader("Content-Length", stat.size);
-
-      // Pipe the stream
-      fileStream.pipe(res);
-      fileStream.on("error", (err) => {
-        console.error("[Video Service] Stream error:", err);
-        if (!res.headersSent) {
-          res.status(500).json({ error: "Error streaming asset." });
-        }
-        res.destroy();
-      });
-    } catch (err) {
-      console.error("[Video Service] Asset access error:", err);
-      res.status(404).json({ error: "Asset not found." });
-    }
-  } catch (error) {
-    console.error("[Video Service] Get video asset error:", error);
-    res.status(500).json({ error: "Error retrieving video asset." });
+    readStream.pipe(res);
+  } catch (e) {
+    console.error("[Video Service] Asset error:", e);
+    res.status(404).json({ error: "Asset not found." });
   }
 };
 
 /**
- * Upload an image file
- * POST /upload-image
+ * ----------------------------------------
+ * WATERMARK VIDEO
+ * ----------------------------------------
+ */
+const watermarkVideo = async (req, res) => {
+  const { videoId, text, x, y, fontSize, fontColor, opacity } = req.body;
+
+  if (!videoId || !text) {
+    return res.status(400).json({ error: "videoId and text are required." });
+  }
+
+  const video = await videoService.findByVideoId(videoId);
+  if (!video) return res.status(404).json({ error: "Video not found." });
+
+  const parameters = { text, x, y, fontSize, fontColor, opacity };
+
+  await videoService.addOperation(videoId, {
+    type: "watermark",
+    status: "pending",
+    parameters,
+  });
+
+  await req.app.locals.eventBus.publish(EventTypes.VIDEO_PROCESSING_REQUESTED, {
+    videoId,
+    userId: req.userId,
+    operation: "watermark",
+    parameters,
+  });
+
+  res.status(200).json({
+    status: "success",
+    message: "Watermark processing started.",
+  });
+};
+
+/**
+ * ----------------------------------------
+ * TRIM VIDEO
+ * ----------------------------------------
+ */
+const trimVideo = async (req, res) => {
+  const { videoId, startTime, endTime } = req.body;
+
+  if (!videoId || startTime === undefined || endTime === undefined) {
+    return res.status(400).json({
+      error: "videoId, startTime and endTime are required.",
+    });
+  }
+
+  if (endTime <= startTime) {
+    return res.status(400).json({
+      error: "endTime must be greater than startTime.",
+    });
+  }
+
+  const video = await videoService.findByVideoId(videoId);
+  if (!video) return res.status(404).json({ error: "Video not found." });
+
+  const parameters = { startTime, endTime };
+
+  await videoService.addOperation(videoId, {
+    type: "trim",
+    status: "pending",
+    parameters,
+  });
+
+  await req.app.locals.eventBus.publish(EventTypes.VIDEO_PROCESSING_REQUESTED, {
+    videoId,
+    userId: req.userId,
+    operation: "trim",
+    parameters,
+  });
+
+  res.status(200).json({
+    status: "success",
+    message: "Trim operation started.",
+  });
+};
+
+/**
+ * ----------------------------------------
+ * UPLOAD IMAGE
+ * ----------------------------------------
  */
 const uploadImage = async (req, res) => {
   const specifiedFileName = req.headers.filename;
-
-  if (!specifiedFileName) {
-    return res.status(400).json({
-      error: "Filename header is required."
-    });
-  }
+  if (!specifiedFileName)
+    return res.status(400).json({ error: "Filename header is required." });
 
   const extension = path.extname(specifiedFileName).substring(1).toLowerCase();
   const name = path.parse(specifiedFileName).name;
   const imageId = crypto.randomBytes(4).toString("hex");
 
-  const FORMATS_SUPPORTED = ["jpg", "jpeg", "png", "webp", "gif"];
-  if (!FORMATS_SUPPORTED.includes(extension)) {
-    return res.status(400).json({
-      error: "Only these formats are allowed: jpg, jpeg, png, webp, gif"
-    });
+  if (!["jpg", "jpeg", "png", "gif", "webp"].includes(extension)) {
+    return res.status(400).json({ error: "Unsupported image format" });
   }
 
   try {
@@ -438,205 +451,193 @@ const uploadImage = async (req, res) => {
     const fullPath = path.join(imageDir, `original.${extension}`);
     const fileStream = fsSync.createWriteStream(fullPath);
 
-    // Pipe request to file safely
     await pipeline(req, fileStream);
 
-    // Get image dimensions
     const dimensions = await FF.getDimensions(fullPath);
 
-    // Save to database (reuse video service for now, could create imageService)
     await videoService.createVideo({
       videoId: imageId,
       userId: req.userId,
       name,
       extension,
       dimensions,
-      metadata: { type: 'image' }
+      metadata: { type: "image" },
     });
 
-    // Publish IMAGE_UPLOADED event
-    try {
-      await req.app.locals.eventBus.publish(EventTypes.IMAGE_UPLOADED, {
-        imageId,
-        userId: req.userId,
-        name,
-        extension,
-        dimensions
-      });
-      console.log(`[Video Service] Published IMAGE_UPLOADED event for imageId: ${imageId}`);
-    } catch (eventError) {
-      console.error('[Video Service] Failed to publish IMAGE_UPLOADED event:', eventError.message);
-    }
+    await req.app.locals.eventBus.publish(EventTypes.IMAGE_UPLOADED, {
+      imageId,
+      userId: req.userId,
+      name,
+      extension,
+      dimensions,
+    });
 
     res.status(201).json({
       status: "success",
-      message: "The image was uploaded successfully!",
+      message: "Image uploaded!",
       imageId,
       name,
-      dimensions
+      dimensions,
     });
   } catch (e) {
-    console.error("[Video Service] Image upload failed:", e);
+    console.error("[Video Service] Image upload error:", e);
 
-    // Cleanup
     try {
       await fs.rm(path.join(__dirname, `../../../storage/${imageId}`), {
         recursive: true,
-        force: true
+        force: true,
       });
     } catch {}
 
     res.status(500).json({
       error: "Failed to upload image.",
-      details: e.message
+      details: e.message,
     });
   }
 };
 
 /**
- * Crop an image
- * POST /crop-image
+ * ----------------------------------------
+ * CROP IMAGE
+ * ----------------------------------------
  */
 const cropImage = async (req, res) => {
   const { imageId, width, height, x, y } = req.body;
 
-  // Validate required fields
   if (!imageId || !width || !height) {
+    return res.status(400).json({ error: "imageId, width, height required" });
+  }
+
+  const image = await videoService.findByVideoId(imageId);
+  if (!image) return res.status(404).json({ error: "Image not found." });
+  if (image.metadata?.type !== "image") {
+    return res.status(400).json({ error: "This endpoint is for images only" });
+  }
+
+  const cropX = x || 0;
+  const cropY = y || 0;
+
+  if (
+    cropX + width > image.dimensions.width ||
+    cropY + height > image.dimensions.height
+  ) {
     return res.status(400).json({
-      error: "imageId, width, and height are required!"
+      error: "Crop area exceeds image bounds.",
     });
   }
 
-  try {
-    // Check if image exists
-    const image = await videoService.findByVideoId(imageId);
-    if (!image) {
-      return res.status(404).json({ error: "Image not found." });
-    }
+  const parameters = { width, height, x: cropX, y: cropY };
 
-    // Check if it's actually an image
-    if (!image.metadata || image.metadata.type !== 'image') {
-      return res.status(400).json({ error: "This endpoint is for images only." });
-    }
+  await videoService.addOperation(imageId, {
+    type: "crop",
+    status: "pending",
+    parameters,
+  });
 
-    // Validate crop dimensions
-    if (width <= 0 || height <= 0) {
-      return res.status(400).json({
-        error: "Width and height must be positive numbers."
-      });
-    }
+  await req.app.locals.eventBus.publish(EventTypes.IMAGE_PROCESSING_REQUESTED, {
+    imageId,
+    userId: req.userId,
+    operation: "crop",
+    parameters,
+  });
 
-    // Validate crop doesn't exceed original dimensions
-    const cropX = x || 0;
-    const cropY = y || 0;
-
-    if (cropX + width > image.dimensions.width || cropY + height > image.dimensions.height) {
-      return res.status(400).json({
-        error: `Crop area exceeds image dimensions. Image is ${image.dimensions.width}x${image.dimensions.height}.`
-      });
-    }
-
-    // Add crop operation to database
-    await videoService.addOperation(imageId, {
-      type: 'crop',
-      status: 'pending',
-      parameters: { width, height, x: cropX, y: cropY }
-    });
-
-    // Publish IMAGE_PROCESSING_REQUESTED event (replaces HTTP call)
-    try {
-      await req.app.locals.eventBus.publish(EventTypes.IMAGE_PROCESSING_REQUESTED, {
-        imageId,
-        userId: req.userId,
-        operation: 'crop',
-        parameters: { width, height, x: cropX, y: cropY }
-      });
-      console.log(`[Video Service] Published IMAGE_PROCESSING_REQUESTED event for imageId: ${imageId}`);
-
-      res.status(200).json({
-        status: "success",
-        message: "The image is now being cropped!"
-      });
-    } catch (error) {
-      console.error("[Video Service] Failed to publish event:", error.message);
-      res.status(500).json({
-        error: "Failed to start image crop.",
-        details: "Event bus unavailable"
-      });
-    }
-  } catch (error) {
-    console.error("[Video Service] Crop image error:", error);
-    res.status(500).json({
-      error: "Failed to start image crop."
-    });
-  }
+  res.status(200).json({
+    status: "success",
+    message: "Image cropping started.",
+  });
 };
 
 /**
- * Resize an image
- * POST /resize-image
+ * ----------------------------------------
+ * CREATE GIF
+ * ----------------------------------------
  */
-const resizeImage = async (req, res) => {
-  const { imageId, width, height } = req.body;
+const createGif = async (req, res) => {
+  const { videoId, fps, width, startTime, duration } = req.body;
 
-  // Validate required fields
-  if (!imageId || !width || !height) {
+  // Validate required field
+  if (!videoId) {
     return res.status(400).json({
-      error: "imageId, width, and height are required!"
+      error: "videoId is required!",
+    });
+  }
+
+  // Validate optional parameters
+  if (fps !== undefined && (fps < 1 || fps > 30)) {
+    return res.status(400).json({
+      error: "FPS must be between 1 and 30.",
+    });
+  }
+
+  if (width !== undefined && (width < 100 || width > 1920)) {
+    return res.status(400).json({
+      error: "Width must be between 100 and 1920 pixels.",
+    });
+  }
+
+  if (startTime !== undefined && startTime < 0) {
+    return res.status(400).json({
+      error: "Start time must be non-negative.",
+    });
+  }
+
+  if (duration !== undefined && duration <= 0) {
+    return res.status(400).json({
+      error: "Duration must be positive.",
     });
   }
 
   try {
-    // Check if image exists
-    const image = await videoService.findByVideoId(imageId);
-    if (!image) {
-      return res.status(404).json({ error: "Image not found." });
+    // Check if video exists
+    const video = await videoService.findByVideoId(videoId);
+    if (!video) {
+      return res.status(404).json({ error: "Video not found." });
     }
 
-    // Check if it's actually an image
-    if (!image.metadata || image.metadata.type !== 'image') {
-      return res.status(400).json({ error: "This endpoint is for images only." });
-    }
+    // Build GIF options
+    const options = {};
+    if (fps !== undefined) options.fps = fps;
+    if (width !== undefined) options.width = width;
+    if (startTime !== undefined) options.startTime = startTime;
+    if (duration !== undefined) options.duration = duration;
 
-    // Validate resize dimensions
-    if (width <= 0 || height <= 0) {
-      return res.status(400).json({
-        error: "Width and height must be positive numbers."
-      });
-    }
-
-    // Add resize operation to database
-    await videoService.addOperation(imageId, {
-      type: 'resize-image',
-      status: 'pending',
-      parameters: { width, height }
+    // Add create-gif operation to database
+    await videoService.addOperation(videoId, {
+      type: "create-gif",
+      status: "pending",
+      parameters: options,
     });
 
-    // Publish IMAGE_PROCESSING_REQUESTED event
+    // Publish VIDEO_PROCESSING_REQUESTED event
     try {
-      await req.app.locals.eventBus.publish(EventTypes.IMAGE_PROCESSING_REQUESTED, {
-        imageId,
-        userId: req.userId,
-        operation: 'resize-image',
-        parameters: { width, height }
-      });
-      console.log(`[Video Service] Published IMAGE_PROCESSING_REQUESTED event for imageId: ${imageId}`);
+      await req.app.locals.eventBus.publish(
+        EventTypes.VIDEO_PROCESSING_REQUESTED,
+        {
+          videoId,
+          userId: req.userId,
+          operation: "create-gif",
+          parameters: options,
+        }
+      );
+      console.log(
+        `[Video Service] Published VIDEO_PROCESSING_REQUESTED event for videoId: ${videoId}`
+      );
 
       res.status(200).json({
         status: "success",
-        message: "The image is now being resized!"
+        message: "The GIF is now being created!",
       });
     } catch (error) {
       console.error("[Video Service] Failed to publish event:", error.message);
       res.status(500).json({
-        error: "Failed to start image resize.",
-        details: "Event bus unavailable"
+        error: "Failed to start GIF creation.",
+        details: "Event bus unavailable",
       });
     }
   } catch (error) {
-    console.error("[Video Service] Resize image error:", error);
+    console.error("[Video Service] Create GIF error:", error);
     res.status(500).json({
-      error: "Failed to start image resize."
+      error: "Failed to start GIF creation.",
     });
   }
 };
@@ -879,10 +880,9 @@ module.exports = {
   resizeVideo,
   convertVideo,
   getVideoAsset,
+  watermarkVideo,
+  trimVideo,
   uploadImage,
   cropImage,
-  resizeImage,
-  trimVideo,
-  watermarkVideo,
-  createGif
+  createGif,
 };

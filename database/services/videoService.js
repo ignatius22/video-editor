@@ -76,7 +76,51 @@ class VideoService {
       [userId, limit, offset]
     );
 
-    return result.rows;
+    // Fetch operations for each video and transform data for client compatibility
+    const videos = await Promise.all(result.rows.map(async (video) => {
+      const operations = await this.getVideoOperations(video.video_id);
+
+      // Build resizes object from resize operations
+      const resizes = {};
+      operations
+        .filter(op => op.operation_type === 'resize')
+        .forEach(op => {
+          const { width, height } = op.parameters;
+          const key = `${width}x${height}`;
+          resizes[key] = {
+            processing: op.status === 'processing' || op.status === 'pending',
+            completed: op.status === 'completed',
+            failed: op.status === 'failed',
+            status: op.status
+          };
+        });
+
+      // Build conversions object from convert operations
+      const conversions = {};
+      operations
+        .filter(op => op.operation_type === 'convert')
+        .forEach(op => {
+          const { targetFormat } = op.parameters;
+          conversions[targetFormat] = {
+            processing: op.status === 'processing' || op.status === 'pending',
+            completed: op.status === 'completed',
+            failed: op.status === 'failed',
+            status: op.status,
+            timestamp: op.updated_at
+          };
+        });
+
+      // Transform for client compatibility
+      return {
+        ...video,
+        videoId: video.video_id, // Client expects videoId (camelCase)
+        resizes,
+        conversions,
+        extractedAudio: video.metadata?.extractedAudio || false
+      };
+    }));
+
+    return videos;
   }
 
   /**
