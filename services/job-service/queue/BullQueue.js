@@ -58,6 +58,9 @@ class BullQueue extends EventEmitter {
       return this.processConvert(bullJob);
     });
 
+    // Process trim jobs
+    this.queue.process('trim', this.CONCURRENCY, async (bullJob) => {
+      return this.processTrim(bullJob);
     // Process image crop jobs
     this.queue.process('crop', this.CONCURRENCY, async (bullJob) => {
       return this.processCrop(bullJob);
@@ -349,6 +352,19 @@ class BullQueue extends EventEmitter {
     }
   }
 
+  async processTrim(bullJob) {
+    const { videoId, startTime, endTime } = bullJob.data;
+
+    const video = await videoService.findByVideoId(videoId);
+    if (!video) {
+      throw new Error(`Video ${videoId} not found`);
+    }
+
+    const originalVideoPath = `./storage/${video.video_id}/original.${video.extension}`;
+    const targetVideoPath = `./storage/${video.video_id}/trimmed-${startTime}-${endTime}.${video.extension}`;
+
+    // Find the operation
+    const operation = await videoService.findOperation(videoId, 'trim', { startTime, endTime });
   async processCrop(bullJob) {
     const { imageId, width, height, x, y } = bullJob.data;
 
@@ -372,6 +388,9 @@ class BullQueue extends EventEmitter {
         await videoService.updateOperationStatus(operation.id, 'processing');
       }
 
+      // Trim video
+      await bullJob.progress(25);
+      await FF.trimVideo(originalVideoPath, targetVideoPath, startTime, endTime);
       // Crop image
       await bullJob.progress(25);
       await FF.cropImage(originalImagePath, targetImagePath, width, height, x || 0, y || 0);
@@ -381,12 +400,19 @@ class BullQueue extends EventEmitter {
 
       // Update operation status to completed
       if (operation) {
+        await videoService.updateOperationStatus(operation.id, 'completed', targetVideoPath);
         await videoService.updateOperationStatus(operation.id, 'completed', targetImagePath);
       }
 
       // Complete
       await bullJob.progress(100);
 
+      console.log(`✅ Video trimmed from ${startTime}s to ${endTime}s`);
+
+      return JSON.stringify({ startTime, endTime, duration: endTime - startTime });
+    } catch (error) {
+      console.error(`❌ Video trim failed:`, error);
+      util.deleteFile(targetVideoPath);
       console.log(`✅ Image cropped to ${width}x${height} at (${x || 0}, ${y || 0})`);
 
       return JSON.stringify({ width, height, x: x || 0, y: y || 0 });

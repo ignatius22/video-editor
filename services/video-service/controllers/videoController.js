@@ -408,6 +408,29 @@ const getVideoAsset = async (req, res) => {
 };
 
 /**
+ * Trim video (queue job)
+ * POST /trim
+ */
+const trimVideo = async (req, res) => {
+  const { videoId, startTime, endTime } = req.body;
+
+  // Validate required fields
+  if (!videoId || startTime === undefined || endTime === undefined) {
+    return res.status(400).json({
+      error: "videoId, startTime, and endTime are required!"
+    });
+  }
+
+  // Validate time values
+  if (startTime < 0 || endTime < 0) {
+    return res.status(400).json({
+      error: "Start time and end time must be non-negative."
+    });
+  }
+
+  if (endTime <= startTime) {
+    return res.status(400).json({
+      error: "End time must be greater than start time."
  * Upload an image file
  * POST /upload-image
  */
@@ -508,6 +531,32 @@ const cropImage = async (req, res) => {
   }
 
   try {
+    // Check if video exists
+    const video = await videoService.findByVideoId(videoId);
+    if (!video) {
+      return res.status(404).json({ error: "Video not found." });
+    }
+
+    // Add trim operation to database
+    await videoService.addOperation(videoId, {
+      type: 'trim',
+      status: 'pending',
+      parameters: { startTime, endTime }
+    });
+
+    // Publish VIDEO_PROCESSING_REQUESTED event
+    try {
+      await req.app.locals.eventBus.publish(EventTypes.VIDEO_PROCESSING_REQUESTED, {
+        videoId,
+        userId: req.userId,
+        operation: 'trim',
+        parameters: { startTime, endTime }
+      });
+      console.log(`[Video Service] Published VIDEO_PROCESSING_REQUESTED event for videoId: ${videoId}`);
+
+      res.status(200).json({
+        status: "success",
+        message: "The video is now being trimmed!"
     // Check if image exists
     const image = await videoService.findByVideoId(imageId);
     if (!image) {
@@ -629,11 +678,15 @@ const resizeImage = async (req, res) => {
     } catch (error) {
       console.error("[Video Service] Failed to publish event:", error.message);
       res.status(500).json({
+        error: "Failed to start video trim.",
         error: "Failed to start image resize.",
         details: "Event bus unavailable"
       });
     }
   } catch (error) {
+    console.error("[Video Service] Trim video error:", error);
+    res.status(500).json({
+      error: "Failed to start video trim."
     console.error("[Video Service] Resize image error:", error);
     res.status(500).json({
       error: "Failed to start image resize."
@@ -648,6 +701,7 @@ module.exports = {
   resizeVideo,
   convertVideo,
   getVideoAsset,
+  trimVideo
   uploadImage,
   cropImage,
   resizeImage
