@@ -5,6 +5,8 @@ const cors = require('cors');
 const cookieParser = require('cookie-parser');
 require('dotenv').config();
 
+const { metricsMiddleware, metricsHandler } = require('../shared/middleware/metrics');
+
 const app = express();
 const PORT = process.env.GATEWAY_PORT || 3000;
 
@@ -20,6 +22,9 @@ app.use(cors());
 app.use(cookieParser());
 app.use(express.json());
 
+// Metrics middleware (track all requests)
+app.use(metricsMiddleware('api-gateway'));
+
 // Rate limiting
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
@@ -34,6 +39,9 @@ app.use((req, res, next) => {
   console.log(`[API Gateway] ${req.method} ${req.path} → Routing...`);
   next();
 });
+
+// Metrics endpoint (for Prometheus scraping)
+app.get('/metrics', metricsHandler);
 
 // Health check
 app.get('/health', (req, res) => {

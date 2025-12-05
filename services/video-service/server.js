@@ -3,6 +3,7 @@ const cookieParser = require('cookie-parser');
 require('dotenv').config();
 
 const videoRoutes = require('./routes/videoRoutes');
+const { metricsMiddleware, metricsHandler } = require('../shared/middleware/metrics');
 
 const app = express();
 const PORT = process.env.VIDEO_SERVICE_PORT || 3002;
@@ -15,11 +16,17 @@ app.use(cookieParser());
 // Increase body size limit for video uploads
 app.use(express.raw({ type: 'application/octet-stream', limit: '500mb' }));
 
+// Metrics middleware (track all requests)
+app.use(metricsMiddleware('video-service'));
+
 // Request logging
 app.use((req, res, next) => {
   console.log(`[Video Service] ${req.method} ${req.path}`);
   next();
 });
+
+// Metrics endpoint (for Prometheus scraping)
+app.get('/metrics', metricsHandler);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
