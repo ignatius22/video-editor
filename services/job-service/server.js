@@ -4,6 +4,7 @@ require('dotenv').config();
 const BullQueue = require('./queue/BullQueue');
 const jobRoutes = require('./routes/jobRoutes');
 const jobController = require('./controllers/jobController');
+const { metricsMiddleware, metricsHandler, updateQueueMetrics } = require('../shared/middleware/metrics');
 
 const app = express();
 const PORT = process.env.JOB_SERVICE_PORT || 3003;
@@ -12,15 +13,26 @@ const PORT = process.env.JOB_SERVICE_PORT || 3003;
 const bullQueue = new BullQueue();
 jobController.initQueue(bullQueue);
 
+// Update queue metrics every 15 seconds
+setInterval(() => {
+  updateQueueMetrics(bullQueue.queue, 'video-processing');
+}, 15000);
+
 // Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Metrics middleware (track all requests)
+app.use(metricsMiddleware('job-service'));
 
 // Request logging
 app.use((req, res, next) => {
   console.log(`[Job Service] ${req.method} ${req.path}`);
   next();
 });
+
+// Metrics endpoint (for Prometheus scraping)
+app.get('/metrics', metricsHandler);
 
 // Health check endpoint
 app.get('/health', (req, res) => {

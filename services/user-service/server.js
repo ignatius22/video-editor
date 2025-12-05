@@ -3,6 +3,7 @@ const cookieParser = require('cookie-parser');
 require('dotenv').config();
 
 const userRoutes = require('./routes/userRoutes');
+const { metricsMiddleware, metricsHandler } = require('../shared/middleware/metrics');
 
 const app = express();
 const PORT = process.env.USER_SERVICE_PORT || 3001;
@@ -12,11 +13,17 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
+// Metrics middleware (track all requests)
+app.use(metricsMiddleware('user-service'));
+
 // Request logging
 app.use((req, res, next) => {
   console.log(`[User Service] ${req.method} ${req.path}`);
   next();
 });
+
+// Metrics endpoint (for Prometheus scraping)
+app.get('/metrics', metricsHandler);
 
 // Health check endpoint
 app.get('/health', (req, res) => {

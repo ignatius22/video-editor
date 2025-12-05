@@ -1,0 +1,91 @@
+# Prometheus Alerting Rules
+
+groups:
+  - name: service_health
+    interval: 30s
+    rules:
+      # Service Down Alert
+      - alert: ServiceDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+          category: availability
+        annotations:
+          summary: "Service {{ $labels.service }} is down"
+          description: "{{ $labels.service }} has been down for more than 1 minute."
+
+      # High Error Rate
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          category: errors
+        annotations:
+          summary: "High error rate on {{ $labels.service }}"
+          description: "{{ $labels.service }} has an error rate of {{ $value }} errors/sec."
+
+  - name: performance
+    interval: 30s
+    rules:
+      # High Response Time
+      - alert: HighResponseTime
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 1
+        for: 5m
+        labels:
+          severity: warning
+          category: performance
+        annotations:
+          summary: "High response time on {{ $labels.service }}"
+          description: "{{ $labels.service }} p95 response time is {{ $value }}s (threshold: 1s)."
+
+      # High CPU Usage
+      - alert: HighCPUUsage
+        expr: process_cpu_seconds_total > 0.8
+        for: 5m
+        labels:
+          severity: warning
+          category: resources
+        annotations:
+          summary: "High CPU usage on {{ $labels.service }}"
+          description: "{{ $labels.service }} CPU usage is above 80%."
+
+  - name: database
+    interval: 30s
+    rules:
+      # Database Connection Pool Exhaustion
+      - alert: DatabaseConnectionPoolNearLimit
+        expr: db_connections_active / db_connections_max > 0.8
+        for: 5m
+        labels:
+          severity: warning
+          category: database
+        annotations:
+          summary: "Database connection pool near limit"
+          description: "Connection pool is {{ $value }}% full."
+
+  - name: queue
+    interval: 30s
+    rules:
+      # Bull Queue Backlog
+      - alert: QueueBacklog
+        expr: bull_queue_waiting > 100
+        for: 10m
+        labels:
+          severity: warning
+          category: queue
+        annotations:
+          summary: "Large queue backlog"
+          description: "{{ $labels.queue }} has {{ $value }} waiting jobs."
+
+      # High Job Failure Rate
+      - alert: HighJobFailureRate
+        expr: rate(bull_jobs_failed_total[10m]) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+          category: queue
+        annotations:
+          summary: "High job failure rate"
+          description: "Job failure rate is {{ $value }} failures/sec."

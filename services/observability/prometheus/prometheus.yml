@@ -1,0 +1,82 @@
+# Prometheus Configuration
+
+global:
+  scrape_interval: 15s  # Scrape targets every 15 seconds
+  evaluation_interval: 15s  # Evaluate rules every 15 seconds
+  external_labels:
+    monitor: 'video-editor-microservices'
+    environment: 'production'
+
+# Alertmanager configuration (optional)
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: []
+          # - 'alertmanager:9093'
+
+# Load rules once and periodically evaluate them
+rule_files:
+  - 'alerts.yml'
+
+# Scrape configurations
+scrape_configs:
+  # Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+        labels:
+          service: 'prometheus'
+
+  # User Service
+  - job_name: 'user-service'
+    static_configs:
+      - targets: ['user-service:3001']
+        labels:
+          service: 'user-service'
+          tier: 'backend'
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+
+  # Video Service
+  - job_name: 'video-service'
+    static_configs:
+      - targets: ['video-service:3002']
+        labels:
+          service: 'video-service'
+          tier: 'backend'
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+
+  # Job Service
+  - job_name: 'job-service'
+    static_configs:
+      - targets: ['job-service:3003']
+        labels:
+          service: 'job-service'
+          tier: 'worker'
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+
+  # API Gateway
+  - job_name: 'api-gateway'
+    static_configs:
+      - targets: ['api-gateway:3000']
+        labels:
+          service: 'api-gateway'
+          tier: 'frontend'
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+
+  # PostgreSQL Exporter (optional - requires postgres_exporter)
+  # - job_name: 'postgres'
+  #   static_configs:
+  #     - targets: ['postgres-exporter:9187']
+  #       labels:
+  #         service: 'postgresql'
+
+  # Redis Exporter (optional - requires redis_exporter)
+  # - job_name: 'redis'
+  #   static_configs:
+  #     - targets: ['redis-exporter:9121']
+  #       labels:
+  #         service: 'redis'
