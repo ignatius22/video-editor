@@ -67,6 +67,21 @@ class BullQueue extends EventEmitter {
     this.queue.process('resize-image', this.CONCURRENCY, async (bullJob) => {
       return this.processResizeImage(bullJob);
     });
+
+    // Process trim jobs
+    this.queue.process('trim', this.CONCURRENCY, async (bullJob) => {
+      return this.processTrim(bullJob);
+    });
+
+    // Process watermark jobs
+    this.queue.process('watermark', this.CONCURRENCY, async (bullJob) => {
+      return this.processWatermark(bullJob);
+    });
+
+    // Process create-gif jobs
+    this.queue.process('create-gif', this.CONCURRENCY, async (bullJob) => {
+      return this.processCreateGif(bullJob);
+    });
   }
 
   setupBullEventListeners() {
@@ -447,6 +462,176 @@ class BullQueue extends EventEmitter {
     } catch (error) {
       console.error(`❌ Image resize failed:`, error);
       util.deleteFile(targetImagePath);
+
+      // Update operation status to failed
+      if (operation) {
+        await videoService.updateOperationStatus(operation.id, 'failed', null, error.message);
+      }
+
+      throw error;
+    }
+  }
+
+  async processTrim(bullJob) {
+    const { videoId, startTime, endTime } = bullJob.data;
+
+    const video = await videoService.findByVideoId(videoId);
+    if (!video) {
+      throw new Error(`Video ${videoId} not found`);
+    }
+
+    const originalVideoPath = `./storage/${video.video_id}/original.${video.extension}`;
+    const targetVideoPath = `./storage/${video.video_id}/trimmed-${startTime}-${endTime}.${video.extension}`;
+
+    // Find the operation
+    const operation = await videoService.findOperation(videoId, 'trim', { startTime, endTime });
+
+    try {
+      // Update progress: Starting
+      await bullJob.progress(10);
+
+      // Update operation status to processing
+      if (operation) {
+        await videoService.updateOperationStatus(operation.id, 'processing');
+      }
+
+      // Trim video
+      await bullJob.progress(25);
+      await FF.trimVideo(originalVideoPath, targetVideoPath, startTime, endTime);
+
+      // Update progress: Processing complete
+      await bullJob.progress(75);
+
+      // Update operation status to completed
+      if (operation) {
+        await videoService.updateOperationStatus(operation.id, 'completed', targetVideoPath);
+      }
+
+      // Complete
+      await bullJob.progress(100);
+
+      console.log(`✅ Video trimmed from ${startTime}s to ${endTime}s`);
+
+      return JSON.stringify({ startTime, endTime, duration: endTime - startTime });
+    } catch (error) {
+      console.error(`❌ Video trim failed:`, error);
+      util.deleteFile(targetVideoPath);
+
+      // Update operation status to failed
+      if (operation) {
+        await videoService.updateOperationStatus(operation.id, 'failed', null, error.message);
+      }
+
+      throw error;
+    }
+  }
+
+  async processWatermark(bullJob) {
+    const { videoId, text, x, y, fontSize, fontColor, opacity } = bullJob.data;
+
+    const video = await videoService.findByVideoId(videoId);
+    if (!video) {
+      throw new Error(`Video ${videoId} not found`);
+    }
+
+    const originalVideoPath = `./storage/${video.video_id}/original.${video.extension}`;
+    // Create filename-safe text for path
+    const safeText = text.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 20);
+    const targetVideoPath = `./storage/${video.video_id}/watermarked-${safeText}.${video.extension}`;
+
+    // Find the operation
+    const operation = await videoService.findOperation(videoId, 'watermark', { text });
+
+    try {
+      // Update progress: Starting
+      await bullJob.progress(10);
+
+      // Update operation status to processing
+      if (operation) {
+        await videoService.updateOperationStatus(operation.id, 'processing');
+      }
+
+      // Add watermark
+      await bullJob.progress(25);
+      const options = { x, y, fontSize, fontColor, opacity };
+      // Remove undefined values
+      Object.keys(options).forEach(key => options[key] === undefined && delete options[key]);
+      await FF.watermarkVideo(originalVideoPath, targetVideoPath, text, options);
+
+      // Update progress: Processing complete
+      await bullJob.progress(75);
+
+      // Update operation status to completed
+      if (operation) {
+        await videoService.updateOperationStatus(operation.id, 'completed', targetVideoPath);
+      }
+
+      // Complete
+      await bullJob.progress(100);
+
+      console.log(`✅ Video watermarked with text: "${text}"`);
+
+      return JSON.stringify({ text, ...options });
+    } catch (error) {
+      console.error(`❌ Video watermark failed:`, error);
+      util.deleteFile(targetVideoPath);
+
+      // Update operation status to failed
+      if (operation) {
+        await videoService.updateOperationStatus(operation.id, 'failed', null, error.message);
+      }
+
+      throw error;
+    }
+  }
+
+  async processCreateGif(bullJob) {
+    const { videoId, fps, width, startTime, duration } = bullJob.data;
+
+    const video = await videoService.findByVideoId(videoId);
+    if (!video) {
+      throw new Error(`Video ${videoId} not found`);
+    }
+
+    const originalVideoPath = `./storage/${video.video_id}/original.${video.extension}`;
+    const targetGifPath = `./storage/${video.video_id}/animated.gif`;
+
+    // Find the operation
+    const operation = await videoService.findOperation(videoId, 'create-gif', {});
+
+    try {
+      // Update progress: Starting
+      await bullJob.progress(10);
+
+      // Update operation status to processing
+      if (operation) {
+        await videoService.updateOperationStatus(operation.id, 'processing');
+      }
+
+      // Create GIF
+      await bullJob.progress(25);
+      const options = { fps, width, startTime, duration };
+      // Remove undefined values
+      Object.keys(options).forEach(key => options[key] === undefined && delete options[key]);
+      await FF.createGif(originalVideoPath, targetGifPath, options);
+
+      // Update progress: Processing complete
+      await bullJob.progress(75);
+
+      // Update operation status to completed
+      if (operation) {
+        await videoService.updateOperationStatus(operation.id, 'completed', targetGifPath);
+      }
+
+      // Complete
+      await bullJob.progress(100);
+
+      console.log(`✅ GIF created from video ${videoId}`);
+
+      return JSON.stringify({ ...options, gifPath: targetGifPath });
+    } catch (error) {
+      console.error(`❌ GIF creation failed:`, error);
+      util.deleteFile(targetGifPath);
 
       // Update operation status to failed
       if (operation) {
