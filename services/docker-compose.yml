@@ -36,6 +36,27 @@ services:
     networks:
       - microservices
 
+  # RabbitMQ (Message Broker for Event Bus)
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: video-editor-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: admin
+      RABBITMQ_DEFAULT_PASS: admin123
+    ports:
+      - "5672:5672"   # AMQP port
+      - "15672:15672" # Management UI
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - microservices
+    restart: unless-stopped
+
   # User Service
   user-service:
     build:
@@ -49,11 +70,14 @@ services:
       DB_NAME: video_editor
       DB_USER: postgres
       DB_PASSWORD: postgres
+      RABBITMQ_URL: amqp://admin:admin123@rabbitmq:5672
       NODE_ENV: production
     ports:
       - "3001:3001"
     depends_on:
       postgres:
+        condition: service_healthy
+      rabbitmq:
         condition: service_healthy
     networks:
       - microservices
@@ -74,6 +98,7 @@ services:
       DB_PASSWORD: postgres
       USER_SERVICE_URL: http://user-service:3001
       JOB_SERVICE_URL: http://job-service:3003
+      RABBITMQ_URL: amqp://admin:admin123@rabbitmq:5672
       NODE_ENV: production
     ports:
       - "3002:3002"
@@ -81,6 +106,8 @@ services:
       - ../storage:/app/storage
     depends_on:
       postgres:
+        condition: service_healthy
+      rabbitmq:
         condition: service_healthy
       user-service:
         condition: service_started
@@ -103,6 +130,7 @@ services:
       DB_NAME: video_editor
       DB_USER: postgres
       DB_PASSWORD: postgres
+      RABBITMQ_URL: amqp://admin:admin123@rabbitmq:5672
       NODE_ENV: production
     ports:
       - "3003:3003"
@@ -112,6 +140,8 @@ services:
       redis:
         condition: service_healthy
       postgres:
+        condition: service_healthy
+      rabbitmq:
         condition: service_healthy
     networks:
       - microservices
@@ -128,13 +158,19 @@ services:
       USER_SERVICE_URL: http://user-service:3001
       VIDEO_SERVICE_URL: http://video-service:3002
       JOB_SERVICE_URL: http://job-service:3003
+      RABBITMQ_URL: amqp://admin:admin123@rabbitmq:5672
       NODE_ENV: production
     ports:
       - "3000:3000"
     depends_on:
-      - user-service
-      - video-service
-      - job-service
+      rabbitmq:
+        condition: service_healthy
+      user-service:
+        condition: service_started
+      video-service:
+        condition: service_started
+      job-service:
+        condition: service_started
     networks:
       - microservices
     restart: unless-stopped
@@ -216,6 +252,8 @@ networks:
 
 volumes:
   postgres_data:
+    driver: local
+  rabbitmq_data:
     driver: local
   prometheus_data:
     driver: local

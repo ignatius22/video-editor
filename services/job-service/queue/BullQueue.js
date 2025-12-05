@@ -24,6 +24,7 @@ class BullQueue extends EventEmitter {
 
     // Configuration
     this.CONCURRENCY = 5; // Process up to 5 jobs simultaneously
+    this.eventBus = null; // Will be set by setEventBus()
 
     // Setup processors for different job types
     this.setupProcessors();
@@ -36,6 +37,14 @@ class BullQueue extends EventEmitter {
 
     console.log('[BullQueue] Initialized with Redis connection');
     console.log(`[BullQueue] Concurrency: ${this.CONCURRENCY} jobs in parallel`);
+  }
+
+  /**
+   * Set the event bus for publishing events
+   */
+  setEventBus(eventBus) {
+    this.eventBus = eventBus;
+    console.log('[BullQueue] Event Bus connected for job event publishing');
   }
 
   setupProcessors() {
@@ -69,34 +78,51 @@ class BullQueue extends EventEmitter {
 
     this.queue.on('global:completed', (jobId, result) => {
       // Job completed successfully
-      this.queue.getJob(jobId).then(job => {
+      this.queue.getJob(jobId).then(async (job) => {
         if (job) {
           const completedAt = new Date().toISOString();
           const queuedAt = new Date(job.timestamp).toISOString();
           const startedAt = new Date(job.processedOn).toISOString();
 
-          this.emit('job:completed', {
+          const eventData = {
             jobId: job.id,
             type: job.name,
             videoId: job.data.videoId,
+            userId: job.data.userId,
             result: JSON.parse(result),
             queuedAt,
             startedAt,
             completedAt,
             duration: job.finishedOn - job.processedOn
-          });
+          };
+
+          this.emit('job:completed', eventData);
+
+          // Publish JOB_COMPLETED event to RabbitMQ
+          if (this.eventBus && this.eventBus.connected) {
+            try {
+              const { EventTypes } = require('../../shared/eventBus');
+              await this.eventBus.publish(EventTypes.JOB_COMPLETED, eventData, {
+                correlationId: job.data.correlationId
+              });
+              console.log(`[BullQueue] Published JOB_COMPLETED event for job ${jobId}`);
+            } catch (error) {
+              console.error('[BullQueue] Failed to publish JOB_COMPLETED event:', error.message);
+            }
+          }
         }
       });
     });
 
     this.queue.on('global:failed', (jobId, err) => {
       // Job failed
-      this.queue.getJob(jobId).then(job => {
+      this.queue.getJob(jobId).then(async (job) => {
         if (job) {
           const failedData = {
             jobId: job.id,
             type: job.name,
             videoId: job.data.videoId,
+            userId: job.data.userId,
             error: err.message || err,
             stack: err.stack,
             queuedAt: new Date(job.timestamp).toISOString(),
@@ -106,6 +132,19 @@ class BullQueue extends EventEmitter {
           };
 
           this.emit('job:failed', failedData);
+
+          // Publish JOB_FAILED event to RabbitMQ
+          if (this.eventBus && this.eventBus.connected) {
+            try {
+              const { EventTypes } = require('../../shared/eventBus');
+              await this.eventBus.publish(EventTypes.JOB_FAILED, failedData, {
+                correlationId: job.data.correlationId
+              });
+              console.log(`[BullQueue] Published JOB_FAILED event for job ${jobId}`);
+            } catch (error) {
+              console.error('[BullQueue] Failed to publish JOB_FAILED event:', error.message);
+            }
+          }
         }
       });
     });

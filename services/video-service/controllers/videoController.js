@@ -10,8 +10,9 @@ const axios = require("axios");
 const videoService = require("../../shared/database/services/videoService");
 const FF = require("../../../lib/FF");
 const util = require("../../../lib/util");
+const { EventTypes } = require("../../shared/eventBus");
 
-// Job Service URL (can be configured via env)
+// Job Service URL (can be configured via env - kept for backward compatibility)
 const JOB_SERVICE_URL = process.env.JOB_SERVICE_URL || 'http://localhost:3003';
 
 /**
@@ -86,6 +87,21 @@ const uploadVideo = async (req, res) => {
       dimensions,
       metadata: { extractedAudio: false }
     });
+
+    // Publish VIDEO_UPLOADED event
+    try {
+      await req.app.locals.eventBus.publish(EventTypes.VIDEO_UPLOADED, {
+        videoId,
+        userId: req.userId,
+        name,
+        extension,
+        dimensions
+      });
+      console.log(`[Video Service] Published VIDEO_UPLOADED event for videoId: ${videoId}`);
+    } catch (eventError) {
+      console.error('[Video Service] Failed to publish VIDEO_UPLOADED event:', eventError.message);
+      // Don't fail the request if event publishing fails
+    }
 
     res.status(201).json({
       status: "success",
@@ -182,24 +198,25 @@ const resizeVideo = async (req, res) => {
       parameters: { width, height }
     });
 
-    // Enqueue job in Job Service
+    // Publish VIDEO_PROCESSING_REQUESTED event (replaces HTTP call)
     try {
-      await axios.post(`${JOB_SERVICE_URL}/enqueue`, {
-        type: "resize",
+      await req.app.locals.eventBus.publish(EventTypes.VIDEO_PROCESSING_REQUESTED, {
         videoId,
-        width,
-        height
+        userId: req.userId,
+        operation: 'resize',
+        parameters: { width, height }
       });
+      console.log(`[Video Service] Published VIDEO_PROCESSING_REQUESTED event for videoId: ${videoId}`);
 
       res.status(200).json({
         status: "success",
         message: "The video is now being processed!"
       });
     } catch (error) {
-      console.error("[Video Service] Failed to enqueue job:", error.message);
+      console.error("[Video Service] Failed to publish event:", error.message);
       res.status(500).json({
         error: "Failed to start video resize.",
-        details: "Job service unavailable"
+        details: "Event bus unavailable"
       });
     }
   } catch (error) {
@@ -253,24 +270,28 @@ const convertVideo = async (req, res) => {
       }
     });
 
-    // Enqueue job in Job Service
+    // Publish VIDEO_PROCESSING_REQUESTED event (replaces HTTP call)
     try {
-      await axios.post(`${JOB_SERVICE_URL}/enqueue`, {
-        type: "convert",
+      await req.app.locals.eventBus.publish(EventTypes.VIDEO_PROCESSING_REQUESTED, {
         videoId,
-        targetFormat: targetFormat.toLowerCase(),
-        originalFormat: video.extension.toLowerCase()
+        userId: req.userId,
+        operation: 'convert',
+        parameters: {
+          targetFormat: targetFormat.toLowerCase(),
+          originalFormat: video.extension.toLowerCase()
+        }
       });
+      console.log(`[Video Service] Published VIDEO_PROCESSING_REQUESTED event for videoId: ${videoId}`);
 
       res.status(200).json({
         status: "success",
         message: `Video conversion to ${targetFormat.toUpperCase()} has started.`
       });
     } catch (error) {
-      console.error("[Video Service] Failed to enqueue job:", error.message);
+      console.error("[Video Service] Failed to publish event:", error.message);
       res.status(500).json({
         error: "Failed to start video conversion.",
-        details: "Job service unavailable"
+        details: "Event bus unavailable"
       });
     }
   } catch (e) {

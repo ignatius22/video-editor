@@ -5,6 +5,7 @@ const BullQueue = require('./queue/BullQueue');
 const jobRoutes = require('./routes/jobRoutes');
 const jobController = require('./controllers/jobController');
 const { metricsMiddleware, metricsHandler, updateQueueMetrics } = require('../shared/middleware/metrics');
+const { EventBus, EventTypes } = require('../shared/eventBus');
 
 const app = express();
 const PORT = process.env.JOB_SERVICE_PORT || 3003;
@@ -12,6 +13,13 @@ const PORT = process.env.JOB_SERVICE_PORT || 3003;
 // Initialize Bull Queue
 const bullQueue = new BullQueue();
 jobController.initQueue(bullQueue);
+
+// Initialize Event Bus
+const eventBus = new EventBus(process.env.RABBITMQ_URL, 'job-service');
+
+// Make event bus available to routes and controllers
+app.locals.eventBus = eventBus;
+jobController.initEventBus(eventBus);
 
 // Update queue metrics every 15 seconds
 setInterval(() => {
@@ -65,13 +73,43 @@ app.use((err, req, res, next) => {
 });
 
 // Start server
-app.listen(PORT, () => {
-  console.log(`
+async function startServer() {
+  try {
+    // Connect to Event Bus
+    await eventBus.connect();
+    console.log('[Job Service] Event Bus connected');
+
+    // Pass event bus to Bull Queue for job event publishing
+    bullQueue.setEventBus(eventBus);
+
+    // Subscribe to VIDEO_PROCESSING_REQUESTED events
+    await eventBus.subscribe(EventTypes.VIDEO_PROCESSING_REQUESTED, async (data, metadata) => {
+      console.log(`[Job Service] Received VIDEO_PROCESSING_REQUESTED event:`, {
+        videoId: data.videoId,
+        operation: data.operation,
+        correlationId: metadata.correlationId
+      });
+
+      try {
+        // Enqueue the job
+        await jobController.handleProcessingRequest(data, metadata);
+      } catch (error) {
+        console.error('[Job Service] Error handling processing request:', error.message);
+        throw error; // Will trigger retry mechanism
+      }
+    });
+
+    console.log('[Job Service] Subscribed to VIDEO_PROCESSING_REQUESTED events');
+
+    // Start HTTP server
+    app.listen(PORT, () => {
+      console.log(`
 ╔════════════════════════════════════════╗
 ║     JOB SERVICE                        ║
 ║     Port: ${PORT}                         ║
 ║     Status: Running ✅                  ║
 ║     Queue: Bull + Redis                ║
+║     Event Bus: Connected ✅             ║
 ║     Workers: ${bullQueue.CONCURRENCY}                          ║
 ╚════════════════════════════════════════╝
 
@@ -82,17 +120,26 @@ Endpoints:
   GET    /history         - Job history
   GET    /health          - Health check
   `);
-});
+    });
+  } catch (error) {
+    console.error('[Job Service] Failed to start:', error);
+    process.exit(1);
+  }
+}
+
+startServer();
 
 // Graceful shutdown
 process.on('SIGTERM', async () => {
   console.log('[Job Service] SIGTERM signal received: closing HTTP server');
+  await eventBus.close();
   await bullQueue.queue.close();
   process.exit(0);
 });
 
 process.on('SIGINT', async () => {
   console.log('[Job Service] SIGINT signal received: closing HTTP server');
+  await eventBus.close();
   await bullQueue.queue.close();
   process.exit(0);
 });
