@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Real-Time Job Monitoring - WebSocket Demo</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            margin-bottom: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+
+        .status {
+            display: inline-block;
+            padding: 8px 20px;
+            border-radius: 20px;
+            font-weight: bold;
+            margin-top: 10px;
+        }
+
+        .status.connected {
+            background: #10b981;
+            color: white;
+        }
+
+        .status.disconnected {
+            background: #ef4444;
+            color: white;
+        }
+
+        .events-container {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            max-height: 600px;
+            overflow-y: auto;
+        }
+
+        .event {
+            padding: 20px;
+            margin-bottom: 15px;
+            border-radius: 10px;
+            border-left: 5px solid #ccc;
+            animation: slideIn 0.3s ease-out;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(-20px);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        .event.queued {
+            background: #dbeafe;
+            border-left-color: #3b82f6;
+        }
+
+        .event.started {
+            background: #fef3c7;
+            border-left-color: #f59e0b;
+        }
+
+        .event.completed {
+            background: #d1fae5;
+            border-left-color: #10b981;
+        }
+
+        .event.failed {
+            background: #fee2e2;
+            border-left-color: #ef4444;
+        }
+
+        .event.permanent-failure {
+            background: #fce7f3;
+            border-left-color: #ec4899;
+        }
+
+        .event.progress {
+            background: #f3e8ff;
+            border-left-color: #a855f7;
+        }
+
+        .event-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .event-title {
+            font-size: 18px;
+            font-weight: bold;
+        }
+
+        .event-time {
+            font-size: 12px;
+            color: #6b7280;
+        }
+
+        .event-details {
+            font-size: 14px;
+            color: #374151;
+        }
+
+        .event-details div {
+            margin: 5px 0;
+        }
+
+        .event-details strong {
+            color: #111827;
+        }
+
+        .clear-btn {
+            background: #ef4444;
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+            margin-top: 20px;
+            transition: background 0.3s;
+        }
+
+        .clear-btn:hover {
+            background: #dc2626;
+        }
+
+        .no-events {
+            text-align: center;
+            color: #9ca3af;
+            padding: 40px;
+            font-size: 18px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎬 Real-Time Job Monitoring</h1>
+            <p>Live updates from the video processing queue</p>
+            <div class="status disconnected" id="status">Disconnected</div>
+        </div>
+
+        <div class="events-container">
+            <div id="events">
+                <div class="no-events">Waiting for job events...</div>
+            </div>
+            <button class="clear-btn" onclick="clearEvents()">Clear Events</button>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        const eventsContainer = document.getElementById('events');
+        const statusEl = document.getElementById('status');
+
+        // Connection status
+        socket.on('connect', () => {
+            console.log('Connected to WebSocket server');
+            statusEl.textContent = 'Connected';
+            statusEl.className = 'status connected';
+        });
+
+        socket.on('disconnect', () => {
+            console.log('Disconnected from WebSocket server');
+            statusEl.textContent = 'Disconnected';
+            statusEl.className = 'status disconnected';
+        });
+
+        // Helper function to add event to UI
+        function addEvent(type, data, emoji) {
+            // Remove "no events" message
+            const noEvents = eventsContainer.querySelector('.no-events');
+            if (noEvents) {
+                noEvents.remove();
+            }
+
+            const eventDiv = document.createElement('div');
+            eventDiv.className = `event ${type}`;
+
+            const time = new Date().toLocaleTimeString();
+
+            let detailsHTML = `
+                <div><strong>Job ID:</strong> ${data.jobId || 'N/A'}</div>
+                <div><strong>Type:</strong> ${data.type}</div>
+                <div><strong>Video ID:</strong> ${data.videoId}</div>
+            `;
+
+            if (type === 'queued') {
+                detailsHTML += `<div><strong>Queue Position:</strong> ${data.queuePosition}</div>`;
+            } else if (type === 'started') {
+                detailsHTML += `<div><strong>Wait Time:</strong> ${((new Date(data.startedAt) - new Date(data.queuedAt)) / 1000).toFixed(2)}s</div>`;
+            } else if (type === 'completed') {
+                detailsHTML += `
+                    <div><strong>Duration:</strong> ${(data.duration / 1000).toFixed(2)}s</div>
+                    <div><strong>Result:</strong> ${JSON.stringify(data.result)}</div>
+                `;
+            } else if (type === 'failed') {
+                detailsHTML += `
+                    <div><strong>Error:</strong> ${data.error}</div>
+                    <div><strong>Attempt:</strong> ${data.currentAttempt + 1}/${data.maxRetries + 1}</div>
+                `;
+            } else if (type === 'permanent-failure') {
+                detailsHTML += `
+                    <div><strong>Total Attempts:</strong> ${data.totalAttempts}</div>
+                    <div><strong>Final Error:</strong> ${data.error}</div>
+                `;
+            } else if (type === 'progress') {
+                detailsHTML += `
+                    <div><strong>Progress:</strong> ${data.progress}%</div>
+                    <div class="progress-bar-container" style="width: 100%; background: #e5e7eb; border-radius: 10px; margin-top: 10px;">
+                        <div class="progress-bar" style="width: ${data.progress}%; background: #10b981; height: 20px; border-radius: 10px; transition: width 0.3s;"></div>
+                    </div>
+                `;
+            }
+
+            eventDiv.innerHTML = `
+                <div class="event-header">
+                    <div class="event-title">${emoji} ${type.toUpperCase().replace('-', ' ')}</div>
+                    <div class="event-time">${time}</div>
+                </div>
+                <div class="event-details">
+                    ${detailsHTML}
+                </div>
+            `;
+
+            eventsContainer.insertBefore(eventDiv, eventsContainer.firstChild);
+
+            // Keep only last 20 events
+            const events = eventsContainer.querySelectorAll('.event');
+            if (events.length > 20) {
+                events[events.length - 1].remove();
+            }
+        }
+
+        // Listen to job events
+        socket.on('job:queued', (data) => {
+            console.log('Job Queued:', data);
+            addEvent('queued', data, '📥');
+        });
+
+        socket.on('job:started', (data) => {
+            console.log('Job Started:', data);
+            addEvent('started', data, '⚙️');
+        });
+
+        socket.on('job:completed', (data) => {
+            console.log('Job Completed:', data);
+            addEvent('completed', data, '✅');
+        });
+
+        socket.on('job:failed', (data) => {
+            console.log('Job Failed:', data);
+            addEvent('failed', data, '❌');
+        });
+
+        socket.on('job:permanent-failure', (data) => {
+            console.log('Job Permanent Failure:', data);
+            addEvent('permanent-failure', data, '⛔');
+        });
+
+        socket.on('job:progress', (data) => {
+            console.log('Job Progress:', data);
+            addEvent('progress', data, '📊');
+        });
+
+        function clearEvents() {
+            eventsContainer.innerHTML = '<div class="no-events">Waiting for job events...</div>';
+        }
+
+        // Example: Subscribe to specific video updates
+        // socket.emit('subscribe-video', 'your-video-id-here');
+    </script>
+</body>
+</html>

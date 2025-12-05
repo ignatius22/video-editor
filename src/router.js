@@ -37,4 +37,8 @@ module.exports = (server) => {
 
   // Return a video asset to the client
   server.get("/get-video-asset", Video.getVideoAsset);
+
+
+  // Convert video format (MP4, MOV, AVI, WebM, etc.)
+  server.put("/api/video/convert", Video.convertVideoFormat);
 };
