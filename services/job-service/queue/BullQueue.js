@@ -2,8 +2,8 @@ const Bull = require('bull');
 const EventEmitter = require('events');
 const videoService = require('../database/services/videoService');
 const jobHistoryService = require('../database/services/jobHistoryService');
-const FF = require('./FF');
-const util = require('./util');
+const FF = require('../../../lib/FF');
+const util = require('../../../lib/util');
 
 class BullQueue extends EventEmitter {
   constructor() {
@@ -96,10 +96,13 @@ class BullQueue extends EventEmitter {
       // Job started processing
       this.queue.getJob(jobId).then(job => {
         if (job) {
+          const resourceId = job.data.videoId || job.data.imageId;
           this.emit('job:started', {
             jobId: job.id,
             type: job.name,
             videoId: job.data.videoId,
+            imageId: job.data.imageId,
+            resourceId: resourceId,
             startedAt: new Date().toISOString(),
             queuedAt: new Date(job.timestamp).toISOString()
           });
@@ -114,11 +117,14 @@ class BullQueue extends EventEmitter {
           const completedAt = new Date().toISOString();
           const queuedAt = new Date(job.timestamp).toISOString();
           const startedAt = new Date(job.processedOn).toISOString();
+          const resourceId = job.data.videoId || job.data.imageId;
 
           const eventData = {
             jobId: job.id,
             type: job.name,
             videoId: job.data.videoId,
+            imageId: job.data.imageId,
+            resourceId: resourceId,
             userId: job.data.userId,
             result: JSON.parse(result),
             queuedAt,
@@ -149,10 +155,13 @@ class BullQueue extends EventEmitter {
       // Job failed
       this.queue.getJob(jobId).then(async (job) => {
         if (job) {
+          const resourceId = job.data.videoId || job.data.imageId;
           const failedData = {
             jobId: job.id,
             type: job.name,
             videoId: job.data.videoId,
+            imageId: job.data.imageId,
+            resourceId: resourceId,
             userId: job.data.userId,
             error: err.message || err,
             stack: err.stack,
@@ -184,10 +193,13 @@ class BullQueue extends EventEmitter {
       // Job progress update
       this.queue.getJob(jobId).then(job => {
         if (job) {
+          const resourceId = job.data.videoId || job.data.imageId;
           this.emit('job:progress', {
             jobId: job.id,
             type: job.name,
             videoId: job.data.videoId,
+            imageId: job.data.imageId,
+            resourceId: resourceId,
             progress: progress
           });
         }
