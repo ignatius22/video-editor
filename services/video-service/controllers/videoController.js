@@ -572,6 +572,75 @@ const cropImage = async (req, res) => {
   }
 };
 
+/**
+ * Resize an image
+ * POST /resize-image
+ */
+const resizeImage = async (req, res) => {
+  const { imageId, width, height } = req.body;
+
+  // Validate required fields
+  if (!imageId || !width || !height) {
+    return res.status(400).json({
+      error: "imageId, width, and height are required!"
+    });
+  }
+
+  try {
+    // Check if image exists
+    const image = await videoService.findByVideoId(imageId);
+    if (!image) {
+      return res.status(404).json({ error: "Image not found." });
+    }
+
+    // Check if it's actually an image
+    if (!image.metadata || image.metadata.type !== 'image') {
+      return res.status(400).json({ error: "This endpoint is for images only." });
+    }
+
+    // Validate resize dimensions
+    if (width <= 0 || height <= 0) {
+      return res.status(400).json({
+        error: "Width and height must be positive numbers."
+      });
+    }
+
+    // Add resize operation to database
+    await videoService.addOperation(imageId, {
+      type: 'resize-image',
+      status: 'pending',
+      parameters: { width, height }
+    });
+
+    // Publish IMAGE_PROCESSING_REQUESTED event
+    try {
+      await req.app.locals.eventBus.publish(EventTypes.IMAGE_PROCESSING_REQUESTED, {
+        imageId,
+        userId: req.userId,
+        operation: 'resize-image',
+        parameters: { width, height }
+      });
+      console.log(`[Video Service] Published IMAGE_PROCESSING_REQUESTED event for imageId: ${imageId}`);
+
+      res.status(200).json({
+        status: "success",
+        message: "The image is now being resized!"
+      });
+    } catch (error) {
+      console.error("[Video Service] Failed to publish event:", error.message);
+      res.status(500).json({
+        error: "Failed to start image resize.",
+        details: "Event bus unavailable"
+      });
+    }
+  } catch (error) {
+    console.error("[Video Service] Resize image error:", error);
+    res.status(500).json({
+      error: "Failed to start image resize."
+    });
+  }
+};
+
 module.exports = {
   getVideos,
   uploadVideo,
@@ -580,5 +649,6 @@ module.exports = {
   convertVideo,
   getVideoAsset,
   uploadImage,
-  cropImage
+  cropImage,
+  resizeImage
 };

@@ -31,4 +31,7 @@ router.post('/upload-image', authMiddleware.authenticate, videoController.upload
 // Crop image (queue job)
 router.post('/crop-image', authMiddleware.authenticate, videoController.cropImage);
 
+// Resize image (queue job)
+router.post('/resize-image', authMiddleware.authenticate, videoController.resizeImage);
+
 module.exports = router;
