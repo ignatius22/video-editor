@@ -57,6 +57,11 @@ class BullQueue extends EventEmitter {
     this.queue.process('convert', this.CONCURRENCY, async (bullJob) => {
       return this.processConvert(bullJob);
     });
+
+    // Process trim jobs
+    this.queue.process('trim', this.CONCURRENCY, async (bullJob) => {
+      return this.processTrim(bullJob);
+    });
   }
 
   setupBullEventListeners() {
@@ -329,6 +334,60 @@ class BullQueue extends EventEmitter {
     } catch (error) {
       console.error(`❌ Video conversion failed:`, error);
       util.deleteFile(convertedPath);
+
+      // Update operation status to failed
+      if (operation) {
+        await videoService.updateOperationStatus(operation.id, 'failed', null, error.message);
+      }
+
+      throw error;
+    }
+  }
+
+  async processTrim(bullJob) {
+    const { videoId, startTime, endTime } = bullJob.data;
+
+    const video = await videoService.findByVideoId(videoId);
+    if (!video) {
+      throw new Error(`Video ${videoId} not found`);
+    }
+
+    const originalVideoPath = `./storage/${video.video_id}/original.${video.extension}`;
+    const targetVideoPath = `./storage/${video.video_id}/trimmed-${startTime}-${endTime}.${video.extension}`;
+
+    // Find the operation
+    const operation = await videoService.findOperation(videoId, 'trim', { startTime, endTime });
+
+    try {
+      // Update progress: Starting
+      await bullJob.progress(10);
+
+      // Update operation status to processing
+      if (operation) {
+        await videoService.updateOperationStatus(operation.id, 'processing');
+      }
+
+      // Trim video
+      await bullJob.progress(25);
+      await FF.trimVideo(originalVideoPath, targetVideoPath, startTime, endTime);
+
+      // Update progress: Processing complete
+      await bullJob.progress(75);
+
+      // Update operation status to completed
+      if (operation) {
+        await videoService.updateOperationStatus(operation.id, 'completed', targetVideoPath);
+      }
+
+      // Complete
+      await bullJob.progress(100);
+
+      console.log(`✅ Video trimmed from ${startTime}s to ${endTime}s`);
+
+      return JSON.stringify({ startTime, endTime, duration: endTime - startTime });
+    } catch (error) {
+      console.error(`❌ Video trim failed:`, error);
+      util.deleteFile(targetVideoPath);
 
       // Update operation status to failed
       if (operation) {
