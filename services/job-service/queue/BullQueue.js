@@ -57,6 +57,11 @@ class BullQueue extends EventEmitter {
     this.queue.process('convert', this.CONCURRENCY, async (bullJob) => {
       return this.processConvert(bullJob);
     });
+
+    // Process create-gif jobs
+    this.queue.process('create-gif', this.CONCURRENCY, async (bullJob) => {
+      return this.processCreateGif(bullJob);
+    });
   }
 
   setupBullEventListeners() {
@@ -329,6 +334,63 @@ class BullQueue extends EventEmitter {
     } catch (error) {
       console.error(`❌ Video conversion failed:`, error);
       util.deleteFile(convertedPath);
+
+      // Update operation status to failed
+      if (operation) {
+        await videoService.updateOperationStatus(operation.id, 'failed', null, error.message);
+      }
+
+      throw error;
+    }
+  }
+
+  async processCreateGif(bullJob) {
+    const { videoId, fps, width, startTime, duration } = bullJob.data;
+
+    const video = await videoService.findByVideoId(videoId);
+    if (!video) {
+      throw new Error(`Video ${videoId} not found`);
+    }
+
+    const originalVideoPath = `./storage/${video.video_id}/original.${video.extension}`;
+    const targetGifPath = `./storage/${video.video_id}/animated.gif`;
+
+    // Find the operation
+    const operation = await videoService.findOperation(videoId, 'create-gif', {});
+
+    try {
+      // Update progress: Starting
+      await bullJob.progress(10);
+
+      // Update operation status to processing
+      if (operation) {
+        await videoService.updateOperationStatus(operation.id, 'processing');
+      }
+
+      // Create GIF
+      await bullJob.progress(25);
+      const options = { fps, width, startTime, duration };
+      // Remove undefined values
+      Object.keys(options).forEach(key => options[key] === undefined && delete options[key]);
+      await FF.createGif(originalVideoPath, targetGifPath, options);
+
+      // Update progress: Processing complete
+      await bullJob.progress(75);
+
+      // Update operation status to completed
+      if (operation) {
+        await videoService.updateOperationStatus(operation.id, 'completed', targetGifPath);
+      }
+
+      // Complete
+      await bullJob.progress(100);
+
+      console.log(`✅ GIF created from video ${videoId}`);
+
+      return JSON.stringify({ ...options, gifPath: targetGifPath });
+    } catch (error) {
+      console.error(`❌ GIF creation failed:`, error);
+      util.deleteFile(targetGifPath);
 
       // Update operation status to failed
       if (operation) {

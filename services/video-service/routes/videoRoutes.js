@@ -22,6 +22,9 @@ router.post('/resize', authMiddleware.authenticate, videoController.resizeVideo)
 // Convert video format (queue job)
 router.post('/convert', authMiddleware.authenticate, videoController.convertVideo);
 
+// Create GIF from video (queue job)
+router.post('/create-gif', authMiddleware.authenticate, videoController.createGif);
+
 // Get video asset (original, thumbnail, resized, etc.)
 router.get('/asset', authMiddleware.authenticate, videoController.getVideoAsset);
 
