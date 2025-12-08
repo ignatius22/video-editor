@@ -47,6 +47,9 @@ router.post(
 // Trim video (queue job)
 router.post("/trim", authMiddleware.authenticate, videoController.trimVideo);
 
+// Create GIF from video (queue job)
+router.post('/create-gif', authMiddleware.authenticate, videoController.createGif);
+
 // Get video asset (original, thumbnail, resized, etc.)
 router.get(
   "/asset",
@@ -73,13 +76,6 @@ router.post(
   "/resize-image",
   authMiddleware.authenticate,
   videoController.resizeImage
-);
-
-// Create GIF from video (queue job)
-router.post(
-  "/create-gif",
-  authMiddleware.authenticate,
-  videoController.createGif
 );
 
 module.exports = router;

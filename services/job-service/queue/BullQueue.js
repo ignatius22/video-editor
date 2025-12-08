@@ -1,9 +1,9 @@
 const Bull = require('bull');
 const EventEmitter = require('events');
-const videoService = require('../database/services/videoService');
-const jobHistoryService = require('../database/services/jobHistoryService');
-const FF = require('./FF');
-const util = require('./util');
+const videoService = require('../../shared/database/services/videoService');
+const jobHistoryService = require('../../shared/database/services/jobHistoryService');
+const FF = require('../../../lib/FF');
+const util = require('../../../lib/util');
 
 class BullQueue extends EventEmitter {
   constructor() {
@@ -24,7 +24,6 @@ class BullQueue extends EventEmitter {
 
     // Configuration
     this.CONCURRENCY = 5; // Process up to 5 jobs simultaneously
-    this.eventBus = null; // Will be set by setEventBus()
 
     // Setup processors for different job types
     this.setupProcessors();
@@ -39,14 +38,6 @@ class BullQueue extends EventEmitter {
     console.log(`[BullQueue] Concurrency: ${this.CONCURRENCY} jobs in parallel`);
   }
 
-  /**
-   * Set the event bus for publishing events
-   */
-  setEventBus(eventBus) {
-    this.eventBus = eventBus;
-    console.log('[BullQueue] Event Bus connected for job event publishing');
-  }
-
   setupProcessors() {
     // Process resize jobs
     this.queue.process('resize', this.CONCURRENCY, async (bullJob) => {
@@ -56,22 +47,6 @@ class BullQueue extends EventEmitter {
     // Process convert jobs
     this.queue.process('convert', this.CONCURRENCY, async (bullJob) => {
       return this.processConvert(bullJob);
-    });
-
-    // Process watermark jobs
-    this.queue.process('watermark', this.CONCURRENCY, async (bullJob) => {
-      return this.processWatermark(bullJob);
-    // Process trim jobs
-    this.queue.process('trim', this.CONCURRENCY, async (bullJob) => {
-      return this.processTrim(bullJob);
-    // Process image crop jobs
-    this.queue.process('crop', this.CONCURRENCY, async (bullJob) => {
-      return this.processCrop(bullJob);
-    });
-
-    // Process image resize jobs
-    this.queue.process('resize-image', this.CONCURRENCY, async (bullJob) => {
-      return this.processResizeImage(bullJob);
     });
   }
 
@@ -94,51 +69,34 @@ class BullQueue extends EventEmitter {
 
     this.queue.on('global:completed', (jobId, result) => {
       // Job completed successfully
-      this.queue.getJob(jobId).then(async (job) => {
+      this.queue.getJob(jobId).then(job => {
         if (job) {
           const completedAt = new Date().toISOString();
           const queuedAt = new Date(job.timestamp).toISOString();
           const startedAt = new Date(job.processedOn).toISOString();
 
-          const eventData = {
+          this.emit('job:completed', {
             jobId: job.id,
             type: job.name,
             videoId: job.data.videoId,
-            userId: job.data.userId,
             result: JSON.parse(result),
             queuedAt,
             startedAt,
             completedAt,
             duration: job.finishedOn - job.processedOn
-          };
-
-          this.emit('job:completed', eventData);
-
-          // Publish JOB_COMPLETED event to RabbitMQ
-          if (this.eventBus && this.eventBus.connected) {
-            try {
-              const { EventTypes } = require('../../shared/eventBus');
-              await this.eventBus.publish(EventTypes.JOB_COMPLETED, eventData, {
-                correlationId: job.data.correlationId
-              });
-              console.log(`[BullQueue] Published JOB_COMPLETED event for job ${jobId}`);
-            } catch (error) {
-              console.error('[BullQueue] Failed to publish JOB_COMPLETED event:', error.message);
-            }
-          }
+          });
         }
       });
     });
 
     this.queue.on('global:failed', (jobId, err) => {
       // Job failed
-      this.queue.getJob(jobId).then(async (job) => {
+      this.queue.getJob(jobId).then(job => {
         if (job) {
           const failedData = {
             jobId: job.id,
             type: job.name,
             videoId: job.data.videoId,
-            userId: job.data.userId,
             error: err.message || err,
             stack: err.stack,
             queuedAt: new Date(job.timestamp).toISOString(),
@@ -148,19 +106,6 @@ class BullQueue extends EventEmitter {
           };
 
           this.emit('job:failed', failedData);
-
-          // Publish JOB_FAILED event to RabbitMQ
-          if (this.eventBus && this.eventBus.connected) {
-            try {
-              const { EventTypes } = require('../../shared/eventBus');
-              await this.eventBus.publish(EventTypes.JOB_FAILED, failedData, {
-                correlationId: job.data.correlationId
-              });
-              console.log(`[BullQueue] Published JOB_FAILED event for job ${jobId}`);
-            } catch (error) {
-              console.error('[BullQueue] Failed to publish JOB_FAILED event:', error.message);
-            }
-          }
         }
       });
     });
@@ -345,157 +290,6 @@ class BullQueue extends EventEmitter {
     } catch (error) {
       console.error(`❌ Video conversion failed:`, error);
       util.deleteFile(convertedPath);
-
-      // Update operation status to failed
-      if (operation) {
-        await videoService.updateOperationStatus(operation.id, 'failed', null, error.message);
-      }
-
-      throw error;
-    }
-  }
-
-  async processWatermark(bullJob) {
-    const { videoId, text, x, y, fontSize, fontColor, opacity } = bullJob.data;
-  async processTrim(bullJob) {
-    const { videoId, startTime, endTime } = bullJob.data;
-
-    const video = await videoService.findByVideoId(videoId);
-    if (!video) {
-      throw new Error(`Video ${videoId} not found`);
-    }
-
-    const originalVideoPath = `./storage/${video.video_id}/original.${video.extension}`;
-    // Create filename-safe text for path
-    const safeText = text.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 20);
-    const targetVideoPath = `./storage/${video.video_id}/watermarked-${safeText}.${video.extension}`;
-
-    // Find the operation
-    const operation = await videoService.findOperation(videoId, 'watermark', { text });
-    const targetVideoPath = `./storage/${video.video_id}/trimmed-${startTime}-${endTime}.${video.extension}`;
-
-    // Find the operation
-    const operation = await videoService.findOperation(videoId, 'trim', { startTime, endTime });
-  async processCrop(bullJob) {
-    const { imageId, width, height, x, y } = bullJob.data;
-
-    const image = await videoService.findByVideoId(imageId);
-    if (!image) {
-      throw new Error(`Image ${imageId} not found`);
-    }
-
-    const originalImagePath = `./storage/${image.video_id}/original.${image.extension}`;
-    const targetImagePath = `./storage/${image.video_id}/cropped-${width}x${height}.${image.extension}`;
-
-    // Find the operation
-    const operation = await videoService.findOperation(imageId, 'crop', { width, height, x, y });
-
-    try {
-      // Update progress: Starting
-      await bullJob.progress(10);
-
-      // Update operation status to processing
-      if (operation) {
-        await videoService.updateOperationStatus(operation.id, 'processing');
-      }
-
-      // Add watermark
-      await bullJob.progress(25);
-      const options = { x, y, fontSize, fontColor, opacity };
-      // Remove undefined values
-      Object.keys(options).forEach(key => options[key] === undefined && delete options[key]);
-      await FF.watermarkVideo(originalVideoPath, targetVideoPath, text, options);
-      // Trim video
-      await bullJob.progress(25);
-      await FF.trimVideo(originalVideoPath, targetVideoPath, startTime, endTime);
-      // Crop image
-      await bullJob.progress(25);
-      await FF.cropImage(originalImagePath, targetImagePath, width, height, x || 0, y || 0);
-
-      // Update progress: Processing complete
-      await bullJob.progress(75);
-
-      // Update operation status to completed
-      if (operation) {
-        await videoService.updateOperationStatus(operation.id, 'completed', targetVideoPath);
-        await videoService.updateOperationStatus(operation.id, 'completed', targetImagePath);
-      }
-
-      // Complete
-      await bullJob.progress(100);
-
-      console.log(`✅ Video watermarked with text: "${text}"`);
-
-      return JSON.stringify({ text, ...options });
-    } catch (error) {
-      console.error(`❌ Video watermark failed:`, error);
-      util.deleteFile(targetVideoPath);
-      console.log(`✅ Video trimmed from ${startTime}s to ${endTime}s`);
-
-      return JSON.stringify({ startTime, endTime, duration: endTime - startTime });
-    } catch (error) {
-      console.error(`❌ Video trim failed:`, error);
-      util.deleteFile(targetVideoPath);
-      console.log(`✅ Image cropped to ${width}x${height} at (${x || 0}, ${y || 0})`);
-
-      return JSON.stringify({ width, height, x: x || 0, y: y || 0 });
-    } catch (error) {
-      console.error(`❌ Image crop failed:`, error);
-      util.deleteFile(targetImagePath);
-
-      // Update operation status to failed
-      if (operation) {
-        await videoService.updateOperationStatus(operation.id, 'failed', null, error.message);
-      }
-
-      throw error;
-    }
-  }
-
-  async processResizeImage(bullJob) {
-    const { imageId, width, height } = bullJob.data;
-
-    const image = await videoService.findByVideoId(imageId);
-    if (!image) {
-      throw new Error(`Image ${imageId} not found`);
-    }
-
-    const originalImagePath = `./storage/${image.video_id}/original.${image.extension}`;
-    const targetImagePath = `./storage/${image.video_id}/resized-${width}x${height}.${image.extension}`;
-
-    // Find the operation
-    const operation = await videoService.findOperation(imageId, 'resize-image', { width, height });
-
-    try {
-      // Update progress: Starting
-      await bullJob.progress(10);
-
-      // Update operation status to processing
-      if (operation) {
-        await videoService.updateOperationStatus(operation.id, 'processing');
-      }
-
-      // Resize image
-      await bullJob.progress(25);
-      await FF.resizeImage(originalImagePath, targetImagePath, width, height);
-
-      // Update progress: Processing complete
-      await bullJob.progress(75);
-
-      // Update operation status to completed
-      if (operation) {
-        await videoService.updateOperationStatus(operation.id, 'completed', targetImagePath);
-      }
-
-      // Complete
-      await bullJob.progress(100);
-
-      console.log(`✅ Image resized to ${width}x${height}`);
-
-      return JSON.stringify({ width, height });
-    } catch (error) {
-      console.error(`❌ Image resize failed:`, error);
-      util.deleteFile(targetImagePath);
 
       // Update operation status to failed
       if (operation) {

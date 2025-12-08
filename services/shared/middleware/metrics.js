@@ -27,6 +27,50 @@ const httpRequestDuration = new client.Histogram({
   registers: [register]
 });
 
+// Application-level metrics
+const appVideoUploads = new client.Counter({
+  name: 'app_video_uploads_total',
+  help: 'Total number of video uploads',
+  labelNames: ['service'],
+  registers: [register]
+});
+
+const appImageUploads = new client.Counter({
+  name: 'app_image_uploads_total',
+  help: 'Total number of image uploads',
+  labelNames: ['service'],
+  registers: [register]
+});
+
+const appJobsCreated = new client.Counter({
+  name: 'app_jobs_created_total',
+  help: 'Total number of processing jobs created',
+  labelNames: ['service', 'operation', 'resource_type'],
+  registers: [register]
+});
+
+const appJobsCompleted = new client.Counter({
+  name: 'app_jobs_completed_total',
+  help: 'Total number of processing jobs completed',
+  labelNames: ['service', 'operation', 'status'],
+  registers: [register]
+});
+
+const appJobsFailed = new client.Counter({
+  name: 'app_jobs_failed_total',
+  help: 'Total number of processing jobs failed',
+  labelNames: ['service', 'operation'],
+  registers: [register]
+});
+
+const appJobProcessingSeconds = new client.Histogram({
+  name: 'app_job_processing_seconds',
+  help: 'Duration of processing jobs in seconds',
+  labelNames: ['service', 'operation'],
+  buckets: [0.1, 0.5, 1, 2, 5, 10, 30, 60, 120, 300],
+  registers: [register]
+});
+
 // Bull Queue Metrics
 const bullQueueWaiting = new client.Gauge({
   name: 'bull_queue_waiting',
@@ -167,11 +211,20 @@ module.exports = {
   metrics: {
     httpRequestsTotal,
     httpRequestDuration,
+    // app-level metrics
+    appVideoUploads,
+    appImageUploads,
+    appJobsCreated,
+    appJobsCompleted,
+    appJobsFailed,
+    appJobProcessingSeconds,
+    // bull metrics
     bullQueueWaiting,
     bullQueueActive,
     bullQueueCompleted,
     bullQueueFailed,
     bullJobDuration,
+    // db metrics
     dbConnectionsActive,
     dbConnectionsMax,
     dbQueryDuration

@@ -10,6 +10,7 @@ const videoService = require("../../shared/database/services/videoService");
 const FF = require("../../../lib/FF");
 const util = require("../../../lib/util");
 const { EventTypes } = require("../../shared/eventBus");
+const { metrics } = require("../../shared/middleware/metrics");
 
 /**
  * ----------------------------------------
@@ -89,6 +90,13 @@ const uploadVideo = async (req, res) => {
       });
     } catch (e) {
       console.error("[Video Service] Failed publishing event:", e.message);
+    }
+
+    // Instrumentation: increment video uploads counter
+    try {
+      metrics.appVideoUploads.labels('video-service').inc();
+    } catch (e) {
+      // ignore metric errors
     }
 
     res.status(201).json({
@@ -180,6 +188,11 @@ const resizeVideo = async (req, res) => {
       parameters: { width, height },
     });
 
+    // Instrumentation: job created
+    try {
+      metrics.appJobsCreated.labels('video-service', 'resize', 'video').inc();
+    } catch (e) {}
+
     await req.app.locals.eventBus.publish(
       EventTypes.VIDEO_PROCESSING_REQUESTED,
       {
@@ -238,6 +251,11 @@ const convertVideo = async (req, res) => {
       status: "pending",
       parameters,
     });
+
+    // Instrumentation: job created
+    try {
+      metrics.appJobsCreated.labels('video-service', 'convert', 'video').inc();
+    } catch (e) {}
 
     await req.app.locals.eventBus.publish(
       EventTypes.VIDEO_PROCESSING_REQUESTED,
@@ -351,80 +369,12 @@ const getVideoAsset = async (req, res) => {
  * WATERMARK VIDEO
  * ----------------------------------------
  */
-const watermarkVideo = async (req, res) => {
-  const { videoId, text, x, y, fontSize, fontColor, opacity } = req.body;
-
-  if (!videoId || !text) {
-    return res.status(400).json({ error: "videoId and text are required." });
-  }
-
-  const video = await videoService.findByVideoId(videoId);
-  if (!video) return res.status(404).json({ error: "Video not found." });
-
-  const parameters = { text, x, y, fontSize, fontColor, opacity };
-
-  await videoService.addOperation(videoId, {
-    type: "watermark",
-    status: "pending",
-    parameters,
-  });
-
-  await req.app.locals.eventBus.publish(EventTypes.VIDEO_PROCESSING_REQUESTED, {
-    videoId,
-    userId: req.userId,
-    operation: "watermark",
-    parameters,
-  });
-
-  res.status(200).json({
-    status: "success",
-    message: "Watermark processing started.",
-  });
-};
 
 /**
  * ----------------------------------------
  * TRIM VIDEO
  * ----------------------------------------
  */
-const trimVideo = async (req, res) => {
-  const { videoId, startTime, endTime } = req.body;
-
-  if (!videoId || startTime === undefined || endTime === undefined) {
-    return res.status(400).json({
-      error: "videoId, startTime and endTime are required.",
-    });
-  }
-
-  if (endTime <= startTime) {
-    return res.status(400).json({
-      error: "endTime must be greater than startTime.",
-    });
-  }
-
-  const video = await videoService.findByVideoId(videoId);
-  if (!video) return res.status(404).json({ error: "Video not found." });
-
-  const parameters = { startTime, endTime };
-
-  await videoService.addOperation(videoId, {
-    type: "trim",
-    status: "pending",
-    parameters,
-  });
-
-  await req.app.locals.eventBus.publish(EventTypes.VIDEO_PROCESSING_REQUESTED, {
-    videoId,
-    userId: req.userId,
-    operation: "trim",
-    parameters,
-  });
-
-  res.status(200).json({
-    status: "success",
-    message: "Trim operation started.",
-  });
-};
 
 /**
  * ----------------------------------------
@@ -471,6 +421,13 @@ const uploadImage = async (req, res) => {
       extension,
       dimensions,
     });
+
+    // Instrumentation: increment image uploads
+    try {
+      metrics.appImageUploads.labels('video-service').inc();
+    } catch (e) {
+      // ignore metric errors
+    }
 
     res.status(201).json({
       status: "success",
@@ -534,6 +491,11 @@ const cropImage = async (req, res) => {
     parameters,
   });
 
+  // Instrumentation: job created
+  try {
+    metrics.appJobsCreated.labels('video-service', 'crop', 'image').inc();
+  } catch (e) {}
+
   await req.app.locals.eventBus.publish(EventTypes.IMAGE_PROCESSING_REQUESTED, {
     imageId,
     userId: req.userId,
@@ -551,6 +513,173 @@ const cropImage = async (req, res) => {
  * ----------------------------------------
  * CREATE GIF
  * ----------------------------------------
+ */
+
+/**
+ * Trim video (queue job)
+ * POST /trim
+ */
+const trimVideo = async (req, res) => {
+  const { videoId, startTime, endTime } = req.body;
+
+  // Validate required fields
+  if (!videoId || startTime === undefined || endTime === undefined) {
+    return res.status(400).json({
+      error: "videoId, startTime, and endTime are required!",
+    });
+  }
+
+  // Validate time values
+  if (startTime < 0 || endTime < 0) {
+    return res.status(400).json({
+      error: "Start time and end time must be non-negative.",
+    });
+  }
+
+  if (endTime <= startTime) {
+    return res.status(400).json({
+      error: "End time must be greater than start time.",
+    });
+  }
+
+  try {
+    // Check if video exists
+    const video = await videoService.findByVideoId(videoId);
+    if (!video) {
+      return res.status(404).json({ error: "Video not found." });
+    }
+
+    // Add trim operation to database
+    await videoService.addOperation(videoId, {
+      type: "trim",
+      status: "pending",
+      parameters: { startTime, endTime },
+    });
+
+    // Instrumentation: job created
+    try {
+      metrics.appJobsCreated.labels('video-service', 'trim', 'video').inc();
+    } catch (e) {}
+
+    // Publish VIDEO_PROCESSING_REQUESTED event
+    try {
+      await req.app.locals.eventBus.publish(
+        EventTypes.VIDEO_PROCESSING_REQUESTED,
+        {
+          videoId,
+          userId: req.userId,
+          operation: "trim",
+          parameters: { startTime, endTime },
+        }
+      );
+      console.log(
+        `[Video Service] Published VIDEO_PROCESSING_REQUESTED event for videoId: ${videoId}`
+      );
+
+      res.status(200).json({
+        status: "success",
+        message: "The video is now being trimmed!",
+      });
+    } catch (error) {
+      console.error("[Video Service] Failed to publish event:", error.message);
+      res.status(500).json({
+        error: "Failed to start video trim.",
+        details: "Event bus unavailable",
+      });
+    }
+  } catch (error) {
+    console.error("[Video Service] Trim video error:", error);
+    res.status(500).json({
+      error: "Failed to start video trim.",
+    });
+  }
+};
+
+/**
+ * Add watermark to video (queue job)
+ * POST /watermark
+ */
+const watermarkVideo = async (req, res) => {
+  const { videoId, text, x, y, fontSize, fontColor, opacity } = req.body;
+
+  // Validate required fields
+  if (!videoId || !text) {
+    return res.status(400).json({
+      error: "videoId and text are required!",
+    });
+  }
+
+  // Validate text length
+  if (text.length > 100) {
+    return res.status(400).json({
+      error: "Watermark text must be 100 characters or less.",
+    });
+  }
+
+  try {
+    // Check if video exists
+    const video = await videoService.findByVideoId(videoId);
+    if (!video) {
+      return res.status(404).json({ error: "Video not found." });
+    }
+
+    // Build watermark options
+    const options = {};
+    if (x !== undefined) options.x = x;
+    if (y !== undefined) options.y = y;
+    if (fontSize !== undefined) options.fontSize = fontSize;
+    if (fontColor !== undefined) options.fontColor = fontColor;
+    if (opacity !== undefined) options.opacity = opacity;
+
+    // Add watermark operation to database
+    await videoService.addOperation(videoId, {
+      type: "watermark",
+      status: "pending",
+      parameters: { text, ...options },
+    });
+
+    // Instrumentation: job created
+    try {
+      metrics.appJobsCreated.labels('video-service', 'watermark', 'video').inc();
+    } catch (e) {}
+
+    // Publish VIDEO_PROCESSING_REQUESTED event
+    try {
+      await req.app.locals.eventBus.publish(
+        EventTypes.VIDEO_PROCESSING_REQUESTED,
+        {
+          videoId,
+          userId: req.userId,
+          operation: "watermark",
+          parameters: { text, ...options },
+        }
+      );
+      console.log(
+        `[Video Service] Published VIDEO_PROCESSING_REQUESTED event for videoId: ${videoId}`
+      );
+
+      res.status(200).json({
+        status: "success",
+        message: "The video is now being watermarked!",
+      });
+    } catch (error) {
+      console.error("[Video Service] Failed to publish event:", error.message);
+      res.status(500).json({
+        error: "Failed to start video watermarking.",
+        details: "Event bus unavailable",
+      });
+    }
+  } catch (error) {
+    console.error("[Video Service] Watermark video error:", error);
+    res.status(500).json({
+      error: "Failed to start video watermarking.",
+    });
+  }
+};
+
+/**
+ * Create GIF from video (queue job)
+ * POST /create-gif
  */
 const createGif = async (req, res) => {
   const { videoId, fps, width, startTime, duration } = req.body;
@@ -607,6 +736,11 @@ const createGif = async (req, res) => {
       status: "pending",
       parameters: options,
     });
+
+    // Instrumentation: job created
+    try {
+      metrics.appJobsCreated.labels('video-service', 'create-gif', 'video').inc();
+    } catch (e) {}
 
     // Publish VIDEO_PROCESSING_REQUESTED event
     try {
