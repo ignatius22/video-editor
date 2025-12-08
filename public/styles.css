@@ -8,27 +8,55 @@
 
 /* number after name means darker or lighter */
 :root {
-  --color-gray-light: #eee;
-  --color-gray: #ccc;
-  --color-gray-dark: #aaa;
-  --color-gray-dark-1: #2a2a2a;
-  --color-text: #555;
-  --color-green-light: #27ae5f7c;
-  --color-green: #27ae60;
-  --color-blue: #3498db;
-  --color-blue-dark: #2980b9;
-  --color-blue-dark-1: #3498db;
-  --color-red: #e74c3c;
-  --color-red-dark: #c0392b;
+  /* Legacy variables mapped to Modern Blue–Teal palette */
+  --color-gray-light: #f1f5f9; /* light surface */
+  --color-gray: #e6eef8;
+  --color-gray-dark: #94a3b8;
+  --color-gray-dark-1: #0b1220;
+  --color-text: #0B1220;
+
+  /* semantic colors (mapped) */
+  --color-green-light: #10b98133;
+  --color-green: #10B981; /* success */
+  --color-blue: #2563EB; /* primary */
+  --color-blue-dark: #1D4ED8; /* primary-600 */
+  --color-blue-dark-1: #1D4ED8;
+  --color-red: #EF4444; /* danger */
+  --color-red-dark: #b91c1c;
   --color-red-dark-1: #98281c;
-  
-  
-  --form-text-focus: #3498dbcb;
-  --form-text-disabled: #ebebe4;
+
+  --form-text-focus: rgba(37,99,235,0.28);
+  --form-text-disabled: #f3f6f9;
   --button-blue-disabled: #8fc2db;
-  --button-blue-focus: #00aaff4f;
+  --button-blue-focus: rgba(37,99,235,0.24);
   --button-red-disabled: #db8f8f;
-  --button-red-focus: #e74d3c55;
+  --button-red-focus: rgba(239,68,68,0.28);
+
+  /* app-level theme variables (used by index.css as well) */
+  --bg: #FFFFFF;
+  --surface: #FFFFFF;
+  --text: #0B1220;
+  --muted: #64748B;
+  --border: #E6E9EE;
+}
+
+/* Dark theme legacy mapping */
+[data-theme="dark"] {
+  --color-gray-light: #0b1220;
+  --color-gray: #071024;
+  --color-gray-dark: #9fb8d9;
+  --color-gray-dark-1: #e6eef8;
+  --color-text: #E6EEF8;
+
+  --color-blue: #2563EB;
+  --color-blue-dark: #1D4ED8;
+  --form-text-focus: rgba(37,99,235,0.28);
+
+  --bg: #071024;
+  --surface: #0B1220;
+  --text: #E6EEF8;
+  --muted: #9fb8d9;
+  --border: rgba(255,255,255,0.06);
 }
 
 html {
@@ -43,8 +71,8 @@ body {
   font-family: "Helvetica", "Arial", sans-serif;
   font-weight: 400;
   line-height: 1.7;
-  background-color: #f0f9fe;
-  color: var(--color-gray-light);
+  background-color: var(--bg);
+  color: var(--text);
 }
 
 /* ---------- UTILS ---------- */
@@ -73,8 +101,8 @@ body {
 /* ------ HEADER ------ */
 .header {
   width: 100%;
-  background-color: #fff;
-  border-bottom: 1px solid var(--color-gray-light);
+  background-color: var(--surface);
+  border-bottom: 1px solid var(--border);
   z-index: 1000;
   display: flex;
   padding: 1rem 3rem;
@@ -124,10 +152,10 @@ body {
 
 .post {
   font-size: 1.6rem;
-  background-color: #fff;
-  color: var(--color-text);
-  border: 1px solid #eee;
-  box-shadow: 0px 1px 4px rgba(0, 0, 0, 0.1);
+  background-color: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  box-shadow: 0px 1px 4px rgba(0, 0, 0, 0.06);
   border-radius: 1rem;
   padding: 1.5rem 2rem 1rem 2rem;
   display: flex;
@@ -145,10 +173,10 @@ body {
 .login-container,
 .profile-container,
 .new-post-container {
-  background: #fff;
+  background: var(--surface);
   padding: 2rem 3rem;
   border-radius: 1rem;
-  box-shadow: 0 1px 5px 0px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 1px 5px 0px rgba(0, 0, 0, 0.06);
 }
 
 .login-container {
@@ -294,8 +322,8 @@ body {
 
 .form-text__label--top {
   top: 1px !important;
-  background: #fff;
-  color: var(--color-text);
+  background: var(--surface);
+  color: var(--text);
   padding: 0 0.7rem;
   font-size: 85%;
 }
@@ -322,8 +350,8 @@ body {
 
 .form-text__input:focus + .form-text__label {
   top: 1px;
-  background: #fff;
-  color: var(--color-text);
+  background: var(--surface);
+  color: var(--text);
   padding: 0 0.7rem;
   font-size: 85%;
 }

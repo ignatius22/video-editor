@@ -1,0 +1,51 @@
+{
+  "dashboard": {
+    "id": null,
+    "uid": "video-editor-overview",
+    "title": "Video Editor - Overview",
+    "tags": ["video-editor","overview"],
+    "timezone": "browser",
+    "schemaVersion": 16,
+    "version": 0,
+    "refresh": "30s",
+    "panels": [
+      {
+        "type": "row",
+        "title": "Overview",
+        "gridPos": {"h":1, "w":24, "x":0, "y":0}
+      },
+      {
+        "type": "stat",
+        "title": "Uploads per minute",
+        "targets": [
+          { "expr": "sum(rate(app_video_uploads_total[5m])) + sum(rate(app_image_uploads_total[5m]))", "refId": "A" }
+        ],
+        "gridPos": {"h":6, "w":6, "x":0, "y":1}
+      },
+      {
+        "type": "stat",
+        "title": "Jobs queued (video-processing)",
+        "targets": [
+          { "expr": "bull_queue_waiting{queue=\"video-processing\"}", "refId": "A" }
+        ],
+        "gridPos": {"h":6, "w":6, "x":6, "y":1}
+      },
+      {
+        "type": "timeseries",
+        "title": "Job creation rate",
+        "targets": [
+          { "expr": "sum by (operation) (rate(app_jobs_created_total[5m]))", "refId": "A" }
+        ],
+        "gridPos": {"h":8, "w":12, "x":0, "y":7}
+      },
+      {
+        "type": "timeseries",
+        "title": "Avg job processing time (seconds)",
+        "targets": [
+          { "expr": "rate(bull_job_duration_sum[5m]) / rate(bull_job_duration_count[5m])", "refId": "A" }
+        ],
+        "gridPos": {"h":8, "w":12, "x":12, "y":7}
+      }
+    ]
+  }
+}

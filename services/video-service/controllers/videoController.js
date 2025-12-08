@@ -10,6 +10,7 @@ const videoService = require("../../shared/database/services/videoService");
 const FF = require("../../../lib/FF");
 const util = require("../../../lib/util");
 const { EventTypes } = require("../../shared/eventBus");
+const { metrics } = require("../../shared/middleware/metrics");
 
 /**
  * ----------------------------------------
@@ -89,6 +90,13 @@ const uploadVideo = async (req, res) => {
       });
     } catch (e) {
       console.error("[Video Service] Failed publishing event:", e.message);
+    }
+
+    // Instrumentation: increment video uploads counter
+    try {
+      metrics.appVideoUploads.labels('video-service').inc();
+    } catch (e) {
+      // ignore metric errors
     }
 
     res.status(201).json({
@@ -180,6 +188,11 @@ const resizeVideo = async (req, res) => {
       parameters: { width, height },
     });
 
+    // Instrumentation: job created
+    try {
+      metrics.appJobsCreated.labels('video-service', 'resize', 'video').inc();
+    } catch (e) {}
+
     await req.app.locals.eventBus.publish(
       EventTypes.VIDEO_PROCESSING_REQUESTED,
       {
@@ -238,6 +251,11 @@ const convertVideo = async (req, res) => {
       status: "pending",
       parameters,
     });
+
+    // Instrumentation: job created
+    try {
+      metrics.appJobsCreated.labels('video-service', 'convert', 'video').inc();
+    } catch (e) {}
 
     await req.app.locals.eventBus.publish(
       EventTypes.VIDEO_PROCESSING_REQUESTED,
@@ -404,6 +422,13 @@ const uploadImage = async (req, res) => {
       dimensions,
     });
 
+    // Instrumentation: increment image uploads
+    try {
+      metrics.appImageUploads.labels('video-service').inc();
+    } catch (e) {
+      // ignore metric errors
+    }
+
     res.status(201).json({
       status: "success",
       message: "Image uploaded!",
@@ -466,6 +491,11 @@ const cropImage = async (req, res) => {
     parameters,
   });
 
+  // Instrumentation: job created
+  try {
+    metrics.appJobsCreated.labels('video-service', 'crop', 'image').inc();
+  } catch (e) {}
+
   await req.app.locals.eventBus.publish(EventTypes.IMAGE_PROCESSING_REQUESTED, {
     imageId,
     userId: req.userId,
@@ -525,6 +555,11 @@ const trimVideo = async (req, res) => {
       status: "pending",
       parameters: { startTime, endTime },
     });
+
+    // Instrumentation: job created
+    try {
+      metrics.appJobsCreated.labels('video-service', 'trim', 'video').inc();
+    } catch (e) {}
 
     // Publish VIDEO_PROCESSING_REQUESTED event
     try {
@@ -602,6 +637,11 @@ const watermarkVideo = async (req, res) => {
       status: "pending",
       parameters: { text, ...options },
     });
+
+    // Instrumentation: job created
+    try {
+      metrics.appJobsCreated.labels('video-service', 'watermark', 'video').inc();
+    } catch (e) {}
 
     // Publish VIDEO_PROCESSING_REQUESTED event
     try {
@@ -696,6 +736,11 @@ const createGif = async (req, res) => {
       status: "pending",
       parameters: options,
     });
+
+    // Instrumentation: job created
+    try {
+      metrics.appJobsCreated.labels('video-service', 'create-gif', 'video').inc();
+    } catch (e) {}
 
     // Publish VIDEO_PROCESSING_REQUESTED event
     try {

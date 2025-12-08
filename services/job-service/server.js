@@ -31,6 +31,48 @@ setInterval(() => {
   updateQueueMetrics(bullQueue.queue, 'video-processing');
 }, 15000);
 
+// Listen to queue events and update metrics where appropriate
+const { metrics } = require('../shared/middleware/metrics');
+
+// Hook BullQueue lifecycle events to metrics
+bullQueue.on('job:queued', (data) => {
+  try {
+    const resourceType = data.videoId ? 'video' : (data.imageId ? 'image' : 'unknown');
+    metrics.appJobsCreated.labels('job-service', data.type, resourceType).inc();
+  } catch (e) {
+    console.error('[Metrics] Error incrementing appJobsCreated:', e);
+  }
+});
+
+bullQueue.on('job:completed', (data) => {
+  try {
+    const durationSec = (data.duration || 0) / 1000;
+    const resourceType = data.videoId ? 'video' : (data.imageId ? 'image' : 'unknown');
+    metrics.appJobsCompleted.labels('job-service', data.type, 'completed').inc();
+    metrics.appJobProcessingSeconds.labels('job-service', data.type).observe(durationSec);
+    // Also increment bull counters
+    metrics.bullQueueCompleted.labels('video-processing').inc();
+    metrics.bullJobDuration.labels('video-processing', data.type).observe(durationSec);
+  } catch (e) {
+    console.error('[Metrics] Error handling job completed metrics:', e);
+  }
+});
+
+bullQueue.on('job:failed', (data) => {
+  try {
+    const durationSec = data.startedAt && data.failedAt ? (new Date(data.failedAt) - new Date(data.startedAt)) / 1000 : 0;
+    metrics.appJobsFailed.labels('job-service', data.type).inc();
+    metrics.appJobsCompleted.labels('job-service', data.type, 'failed').inc();
+    metrics.bullQueueFailed.labels('video-processing').inc();
+    if (durationSec > 0) {
+      metrics.appJobProcessingSeconds.labels('job-service', data.type).observe(durationSec);
+      metrics.bullJobDuration.labels('video-processing', data.type).observe(durationSec);
+    }
+  } catch (e) {
+    console.error('[Metrics] Error handling job failed metrics:', e);
+  }
+});
+
 // Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
