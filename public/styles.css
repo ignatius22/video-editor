@@ -1475,6 +1475,32 @@ body {
   border-radius: 0.5rem;
 }
 
+/* Converted videos list */
+.video-detail__conversions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  margin-top: 0.5rem;
+}
+.conversion-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+.conversion-format {
+  font-weight: 600;
+  margin-right: 0.8rem; /* ensures 'AVI Processing...' doesn't concatenate */
+}
+.conversion-status.processing {
+  color: var(--color-blue);
+}
+.conversion-status.completed {
+  color: var(--color-green);
+}
+.conversion-status.error {
+  color: var(--color-red);
+}
+
 /* Convert Modal Styles */
 .convert-modal {
   padding: 2rem;

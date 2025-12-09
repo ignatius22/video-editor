@@ -192,15 +192,20 @@ const resizeVideo = async (req, res, handleErr) => {
 const getVideoAsset = async (req, res, handleErr) => {
   const { videoId, type, format, dimensions } = req.query;
 
+  // Validate required parameters
+  if (!videoId || !type) {
+    return handleErr({ status: 400, message: "videoId and type are required." });
+  }
+
   try {
     const video = await videoService.findByVideoId(videoId);
     if (!video) return handleErr({ status: 404, message: "Video not found!" });
 
-  let filePath;
-  let filename;
-  let extension;
+    let filePath;
+    let filename;
+    let extension;
 
-  switch (type) {
+    switch (type) {
     case "thumbnail":
       extension = "jpg";
       filename = `${video.name}-thumbnail.${extension}`;
@@ -250,46 +255,67 @@ const getVideoAsset = async (req, res, handleErr) => {
         status: 400,
         message: "Invalid asset type requested.",
       });
-  }
-
-  const absolutePath = path.join(__dirname, filePath);
-
-  let fileStream;
-  try {
-    await fs.access(absolutePath);
-    const stat = await fs.stat(absolutePath);
-    const mimeType = util.getMimeFromExtension(extension);
-
-    fileStream = fsSync.createReadStream(absolutePath);
-
-    // Close the stream if client disconnects
-    res.on("close", () => {
-      fileStream.destroy();
-    });
-
-    if (type !== "thumbnail") {
-      res.setHeader(
-        "Content-Disposition",
-        `attachment; filename="${filename}"`
-      );
     }
-    res.setHeader("Content-Type", mimeType);
-    res.setHeader("Content-Length", stat.size);
 
-    // Pipe the stream and catch errors
-    fileStream.pipe(res);
-    fileStream.on("error", (err) => {
-      console.error("Stream error:", err);
+    const absolutePath = path.join(__dirname, filePath);
+
+    let fileStream;
+    try {
+      await fs.access(absolutePath);
+      const stat = await fs.stat(absolutePath);
+      const mimeType = util.getMimeFromExtension(extension);
+
+      // Create read stream with high water mark for better performance
+      fileStream = fsSync.createReadStream(absolutePath, {
+        highWaterMark: 64 * 1024 // 64KB chunks
+      });
+
+      // Handle stream errors before piping
+      fileStream.on("error", (err) => {
+        console.error("Stream error:", err);
+        if (!res.headersSent) {
+          handleErr({ status: 500, message: "Error streaming asset." });
+        }
+        fileStream.destroy();
+      });
+
+      // Close the stream if client disconnects
+      res.on("close", () => {
+        if (fileStream && !fileStream.destroyed) {
+          fileStream.destroy();
+        }
+      });
+
+      if (type !== "thumbnail") {
+        res.setHeader(
+          "Content-Disposition",
+          `attachment; filename="${filename}"`
+        );
+      } else {
+        // Cache thumbnails aggressively to reduce requests
+        res.setHeader("Cache-Control", "public, max-age=86400, immutable"); // 24 hours
+        res.setHeader("ETag", `"${videoId}-${stat.size}-${stat.mtimeMs}"`);
+      }
+
+      res.setHeader("Content-Type", mimeType);
+      res.setHeader("Content-Length", stat.size);
+      res.setHeader("Accept-Ranges", "bytes"); // Enable range requests
+
+      // Pipe the stream with error handling
+      fileStream.pipe(res);
+
+      // Handle pipe completion
+      fileStream.on("end", () => {
+        if (!res.writableEnded) {
+          res.end();
+        }
+      });
+    } catch (err) {
+      console.error("Asset access error:", err);
       if (!res.headersSent)
-        handleErr({ status: 500, message: "Error streaming asset." });
-      res.destroy(); // Close the response if stream fails
-    });
-  } catch (err) {
-    console.error("Asset access error:", err);
-    if (!res.headersSent)
-      return handleErr({ status: 500, message: "Error loading video asset." });
-    res.destroy();
-  }
+        return handleErr({ status: 500, message: "Error loading video asset." });
+      res.destroy();
+    }
   } catch (error) {
     console.error("Get video asset error:", error);
     if (!res.headersSent)

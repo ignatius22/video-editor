@@ -1,6 +1,7 @@
 // Controllers
 const User = require("./controllers/user");
 const Video = require("./controllers/video");
+const Image = require("./controllers/image");
 
 module.exports = (server) => {
   // ------------------------------------------------ //
@@ -41,4 +42,26 @@ module.exports = (server) => {
 
   // Convert video format (MP4, MOV, AVI, WebM, etc.)
   server.put("/api/video/convert", Video.convertVideoFormat);
+
+  // ------------------------------------------------ //
+  // ************ IMAGE ROUTES ************* //
+  // ------------------------------------------------ //
+
+  // Return the list of all images that a logged in user has uploaded
+  server.get("/api/images", Image.getImages);
+
+  // Upload an image file
+  server.post("/api/upload-image", Image.uploadImage);
+
+  // Crop an image (creates a new image file)
+  server.post("/api/image/crop", Image.cropImage);
+
+  // Resize an image (creates a new image file)
+  server.post("/api/image/resize", Image.resizeImage);
+
+  // Return an image asset to the client
+  server.get("/get-image-asset", Image.getImageAsset);
+
+  // Get image by ID (returns blob)
+  server.get("/api/image/:imageId", Image.getImageById);
 };

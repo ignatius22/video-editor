@@ -352,12 +352,47 @@ const getVideoAsset = async (req, res) => {
 
     await fs.access(filePath);
     const stat = await fs.stat(filePath);
-    const readStream = fsSync.createReadStream(filePath);
 
+    // Create read stream with high water mark for better performance
+    const readStream = fsSync.createReadStream(filePath, {
+      highWaterMark: 64 * 1024 // 64KB chunks
+    });
+
+    // Handle stream errors before piping
+    readStream.on("error", (err) => {
+      console.error("[Video Service] Stream error:", err);
+      if (!res.headersSent) {
+        res.status(500).json({ error: "Error streaming asset." });
+      }
+      readStream.destroy();
+    });
+
+    // Close the stream if client disconnects
+    res.on("close", () => {
+      if (readStream && !readStream.destroyed) {
+        readStream.destroy();
+      }
+    });
+
+    // Set content headers
     res.setHeader("Content-Type", util.getMimeFromExtension(extension));
     res.setHeader("Content-Length", stat.size);
+    res.setHeader("Accept-Ranges", "bytes"); // Enable range requests
+
+    // Cache thumbnails aggressively to reduce requests
+    if (type === "thumbnail") {
+      res.setHeader("Cache-Control", "public, max-age=86400, immutable"); // 24 hours
+      res.setHeader("ETag", `"${videoId}-${stat.size}-${stat.mtimeMs}"`);
+    }
 
     readStream.pipe(res);
+
+    // Handle pipe completion
+    readStream.on("end", () => {
+      if (!res.writableEnded) {
+        res.end();
+      }
+    });
   } catch (e) {
     console.error("[Video Service] Asset error:", e);
     res.status(404).json({ error: "Asset not found." });

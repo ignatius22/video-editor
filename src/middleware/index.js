@@ -8,9 +8,18 @@ exports.authenticate = async (req, res, next) => {
     "DELETE /api/logout",
     "POST /api/upload-video",
     "GET /api/videos",
+    "GET /api/images",
+    "POST /api/upload-image",
+    "POST /api/image/crop",
+    "POST /api/image/resize",
+    "GET /get-image-asset",
   ];
 
-  if (routesToAuthenticate.indexOf(req.method + " " + req.url) !== -1) {
+  // Extract the base path for dynamic routes (e.g., /api/image/:imageId)
+  const requestPath = req.method + " " + req.url;
+  const isImageByIdRoute = req.method === "GET" && req.url.startsWith("/api/image/");
+
+  if (routesToAuthenticate.indexOf(requestPath) !== -1 || isImageByIdRoute) {
     // If we have a token cookie, validate it
     if (req.headers.cookie) {
       const token = req.headers.cookie.split("=")[1];
@@ -33,9 +42,24 @@ exports.authenticate = async (req, res, next) => {
 };
 
 exports.serverIndex = (req, res, next) => {
-  const routes = ["/", "/login", "/profile"];
+  const routes = [
+    "/",
+    "/login",
+    "/profile",
+    "/operations",
+    "/images",
+    "/image-operations",
+    "/analytics"
+  ];
 
-  if (routes.indexOf(req.url) !== -1 && req.method === "GET") {
+  // Also handle dynamic routes like /operations/:videoId and /image-operations/:imageId
+  const isDynamicOperationsRoute = req.url.startsWith("/operations/");
+  const isDynamicImageOperationsRoute = req.url.startsWith("/image-operations/");
+
+  if (
+    (routes.indexOf(req.url) !== -1 || isDynamicOperationsRoute || isDynamicImageOperationsRoute) &&
+    req.method === "GET"
+  ) {
     return res
       .status(200)
       .sendFile(path.join(__dirname, "../../public/index.html"), "text/html");
