@@ -57,25 +57,4 @@ router.get(
   videoController.getVideoAsset
 );
 
-// Upload image
-router.post(
-  "/upload-image",
-  authMiddleware.authenticate,
-  videoController.uploadImage
-);
-
-// Crop image (queue job)
-router.post(
-  "/crop-image",
-  authMiddleware.authenticate,
-  videoController.cropImage
-);
-
-// Resize image (queue job)
-router.post(
-  "/resize-image",
-  authMiddleware.authenticate,
-  videoController.resizeImage
-);
-
 module.exports = router;

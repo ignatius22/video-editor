@@ -4,6 +4,7 @@ const videoService = require('../../shared/database/services/videoService');
 const jobHistoryService = require('../../shared/database/services/jobHistoryService');
 const FF = require('../../../lib/FF');
 const util = require('../../../lib/util');
+const { EventTypes } = require('../../shared/eventBus');
 
 class BullQueue extends EventEmitter {
   constructor() {
@@ -24,6 +25,7 @@ class BullQueue extends EventEmitter {
 
     // Configuration
     this.CONCURRENCY = 5; // Process up to 5 jobs simultaneously
+    this.eventBus = null; // Will be set via setEventBus()
 
     // Setup processors for different job types
     this.setupProcessors();
@@ -38,6 +40,11 @@ class BullQueue extends EventEmitter {
     console.log(`[BullQueue] Concurrency: ${this.CONCURRENCY} jobs in parallel`);
   }
 
+  setEventBus(eventBus) {
+    this.eventBus = eventBus;
+    console.log('[BullQueue] Event bus connected');
+  }
+
   setupProcessors() {
     // Process resize jobs
     this.queue.process('resize', this.CONCURRENCY, async (bullJob) => {
@@ -47,6 +54,36 @@ class BullQueue extends EventEmitter {
     // Process convert jobs
     this.queue.process('convert', this.CONCURRENCY, async (bullJob) => {
       return this.processConvert(bullJob);
+    });
+
+    // Process trim jobs
+    this.queue.process('trim', this.CONCURRENCY, async (bullJob) => {
+      return this.processTrim(bullJob);
+    });
+
+    // Process watermark jobs
+    this.queue.process('watermark', this.CONCURRENCY, async (bullJob) => {
+      return this.processWatermark(bullJob);
+    });
+
+    // Process create-gif jobs
+    this.queue.process('create-gif', this.CONCURRENCY, async (bullJob) => {
+      return this.processCreateGif(bullJob);
+    });
+
+    // Process crop image jobs
+    this.queue.process('crop', this.CONCURRENCY, async (bullJob) => {
+      return this.processCropImage(bullJob);
+    });
+
+    // Process resize image jobs
+    this.queue.process('resize-image', this.CONCURRENCY, async (bullJob) => {
+      return this.processResizeImage(bullJob);
+    });
+
+    // Process convert image jobs
+    this.queue.process('convert-image', this.CONCURRENCY, async (bullJob) => {
+      return this.processConvertImage(bullJob);
     });
   }
 
@@ -69,13 +106,13 @@ class BullQueue extends EventEmitter {
 
     this.queue.on('global:completed', (jobId, result) => {
       // Job completed successfully
-      this.queue.getJob(jobId).then(job => {
+      this.queue.getJob(jobId).then(async job => {
         if (job) {
           const completedAt = new Date().toISOString();
           const queuedAt = new Date(job.timestamp).toISOString();
           const startedAt = new Date(job.processedOn).toISOString();
 
-          this.emit('job:completed', {
+          const eventData = {
             jobId: job.id,
             type: job.name,
             videoId: job.data.videoId,
@@ -84,14 +121,27 @@ class BullQueue extends EventEmitter {
             startedAt,
             completedAt,
             duration: job.finishedOn - job.processedOn
-          });
+          };
+
+          this.emit('job:completed', eventData);
+
+          // Publish JOB_COMPLETED event to event bus
+          if (this.eventBus && this.eventBus.connected) {
+            try {
+              await this.eventBus.publish(EventTypes.JOB_COMPLETED, eventData, {
+                correlationId: job.data.correlationId
+              });
+            } catch (error) {
+              console.error('[BullQueue] Failed to publish JOB_COMPLETED event:', error.message);
+            }
+          }
         }
       });
     });
 
     this.queue.on('global:failed', (jobId, err) => {
       // Job failed
-      this.queue.getJob(jobId).then(job => {
+      this.queue.getJob(jobId).then(async job => {
         if (job) {
           const failedData = {
             jobId: job.id,
@@ -106,6 +156,17 @@ class BullQueue extends EventEmitter {
           };
 
           this.emit('job:failed', failedData);
+
+          // Publish JOB_FAILED event to event bus
+          if (this.eventBus && this.eventBus.connected) {
+            try {
+              await this.eventBus.publish(EventTypes.JOB_FAILED, failedData, {
+                correlationId: job.data.correlationId
+              });
+            } catch (error) {
+              console.error('[BullQueue] Failed to publish JOB_FAILED event:', error.message);
+            }
+          }
         }
       });
     });
@@ -154,6 +215,62 @@ class BullQueue extends EventEmitter {
             convertedPath
           });
           console.log(`[BullQueue] Restored convert job: ${operation.video_id} → ${params.targetFormat}`);
+        } else if (operation.operation_type === 'trim') {
+          this.enqueue({
+            type: 'trim',
+            videoId: operation.video_id,
+            startTime: params.startTime,
+            endTime: params.endTime
+          });
+          console.log(`[BullQueue] Restored trim job: ${operation.video_id} ${params.startTime}s-${params.endTime}s`);
+        } else if (operation.operation_type === 'watermark') {
+          this.enqueue({
+            type: 'watermark',
+            videoId: operation.video_id,
+            text: params.text,
+            x: params.x,
+            y: params.y,
+            fontSize: params.fontSize,
+            fontColor: params.fontColor,
+            opacity: params.opacity
+          });
+          console.log(`[BullQueue] Restored watermark job: ${operation.video_id} "${params.text}"`);
+        } else if (operation.operation_type === 'create-gif') {
+          this.enqueue({
+            type: 'create-gif',
+            videoId: operation.video_id,
+            fps: params.fps,
+            width: params.width,
+            startTime: params.startTime,
+            duration: params.duration
+          });
+          console.log(`[BullQueue] Restored create-gif job: ${operation.video_id}`);
+        } else if (operation.operation_type === 'crop') {
+          this.enqueue({
+            type: 'crop',
+            imageId: operation.video_id, // Note: images also use video_id column
+            width: params.width,
+            height: params.height,
+            x: params.x,
+            y: params.y
+          });
+          console.log(`[BullQueue] Restored crop job: ${operation.video_id} ${params.width}x${params.height} at (${params.x},${params.y})`);
+        } else if (operation.operation_type === 'resize-image') {
+          this.enqueue({
+            type: 'resize-image',
+            imageId: operation.video_id,
+            width: params.width,
+            height: params.height
+          });
+          console.log(`[BullQueue] Restored resize-image job: ${operation.video_id} ${params.width}x${params.height}`);
+        } else if (operation.operation_type === 'convert-image') {
+          this.enqueue({
+            type: 'convert-image',
+            imageId: operation.video_id,
+            targetFormat: params.targetFormat,
+            originalFormat: params.originalFormat
+          });
+          console.log(`[BullQueue] Restored convert-image job: ${operation.video_id} ${params.originalFormat} → ${params.targetFormat}`);
         }
       });
 
@@ -290,6 +407,348 @@ class BullQueue extends EventEmitter {
     } catch (error) {
       console.error(`❌ Video conversion failed:`, error);
       util.deleteFile(convertedPath);
+
+      // Update operation status to failed
+      if (operation) {
+        await videoService.updateOperationStatus(operation.id, 'failed', null, error.message);
+      }
+
+      throw error;
+    }
+  }
+
+  async processTrim(bullJob) {
+    const { videoId, startTime, endTime } = bullJob.data;
+
+    const video = await videoService.findByVideoId(videoId);
+    if (!video) {
+      throw new Error(`Video ${videoId} not found`);
+    }
+
+    const originalVideoPath = `./storage/${video.video_id}/original.${video.extension}`;
+    const targetVideoPath = `./storage/${video.video_id}/trimmed_${startTime}-${endTime}.${video.extension}`;
+
+    // Find the operation
+    const operation = await videoService.findOperation(videoId, 'trim', { startTime, endTime });
+
+    try {
+      // Update progress: Starting
+      await bullJob.progress(10);
+
+      // Update operation status to processing
+      if (operation) {
+        await videoService.updateOperationStatus(operation.id, 'processing');
+      }
+
+      // Trim video
+      await bullJob.progress(25);
+      await FF.trimVideo(originalVideoPath, targetVideoPath, startTime, endTime);
+
+      // Update progress: Processing complete
+      await bullJob.progress(75);
+
+      // Update operation status to completed
+      if (operation) {
+        await videoService.updateOperationStatus(operation.id, 'completed', targetVideoPath);
+      }
+
+      // Complete
+      await bullJob.progress(100);
+
+      console.log(`✅ Video trimmed ${videoId} from ${startTime}s to ${endTime}s`);
+
+      return JSON.stringify({ startTime, endTime, outputPath: targetVideoPath });
+    } catch (error) {
+      console.error(`❌ Video trim failed:`, error);
+      util.deleteFile(targetVideoPath);
+
+      // Update operation status to failed
+      if (operation) {
+        await videoService.updateOperationStatus(operation.id, 'failed', null, error.message);
+      }
+
+      throw error;
+    }
+  }
+
+  async processWatermark(bullJob) {
+    const { videoId, text, x, y, fontSize, fontColor, opacity } = bullJob.data;
+
+    const video = await videoService.findByVideoId(videoId);
+    if (!video) {
+      throw new Error(`Video ${videoId} not found`);
+    }
+
+    const originalVideoPath = `./storage/${video.video_id}/original.${video.extension}`;
+    const targetVideoPath = `./storage/${video.video_id}/watermarked.${video.extension}`;
+
+    // Build watermark options
+    const options = {};
+    if (x !== undefined) options.x = x;
+    if (y !== undefined) options.y = y;
+    if (fontSize !== undefined) options.fontSize = fontSize;
+    if (fontColor !== undefined) options.fontColor = fontColor;
+    if (opacity !== undefined) options.opacity = opacity;
+
+    // Find the operation
+    const operation = await videoService.findOperation(videoId, 'watermark', { text, ...options });
+
+    try {
+      // Update progress: Starting
+      await bullJob.progress(10);
+
+      // Update operation status to processing
+      if (operation) {
+        await videoService.updateOperationStatus(operation.id, 'processing');
+      }
+
+      // Add watermark
+      await bullJob.progress(25);
+      await FF.watermarkVideo(originalVideoPath, targetVideoPath, text, options);
+
+      // Update progress: Processing complete
+      await bullJob.progress(75);
+
+      // Update operation status to completed
+      if (operation) {
+        await videoService.updateOperationStatus(operation.id, 'completed', targetVideoPath);
+      }
+
+      // Complete
+      await bullJob.progress(100);
+
+      console.log(`✅ Watermark added to video ${videoId}`);
+
+      return JSON.stringify({ text, options, outputPath: targetVideoPath });
+    } catch (error) {
+      console.error(`❌ Watermark failed:`, error);
+      util.deleteFile(targetVideoPath);
+
+      // Update operation status to failed
+      if (operation) {
+        await videoService.updateOperationStatus(operation.id, 'failed', null, error.message);
+      }
+
+      throw error;
+    }
+  }
+
+  async processCreateGif(bullJob) {
+    const { videoId, fps, width, startTime, duration } = bullJob.data;
+
+    const video = await videoService.findByVideoId(videoId);
+    if (!video) {
+      throw new Error(`Video ${videoId} not found`);
+    }
+
+    const originalVideoPath = `./storage/${video.video_id}/original.${video.extension}`;
+    const targetGifPath = `./storage/${video.video_id}/video.gif`;
+
+    // Build GIF options
+    const options = {};
+    if (fps !== undefined) options.fps = fps;
+    if (width !== undefined) options.width = width;
+    if (startTime !== undefined) options.startTime = startTime;
+    if (duration !== undefined) options.duration = duration;
+
+    // Find the operation
+    const operation = await videoService.findOperation(videoId, 'create-gif', options);
+
+    try {
+      // Update progress: Starting
+      await bullJob.progress(10);
+
+      // Update operation status to processing
+      if (operation) {
+        await videoService.updateOperationStatus(operation.id, 'processing');
+      }
+
+      // Create GIF
+      await bullJob.progress(25);
+      await FF.createGif(originalVideoPath, targetGifPath, options);
+
+      // Update progress: Processing complete
+      await bullJob.progress(75);
+
+      // Update operation status to completed
+      if (operation) {
+        await videoService.updateOperationStatus(operation.id, 'completed', targetGifPath);
+      }
+
+      // Complete
+      await bullJob.progress(100);
+
+      console.log(`✅ GIF created from video ${videoId}`);
+
+      return JSON.stringify({ options, outputPath: targetGifPath });
+    } catch (error) {
+      console.error(`❌ GIF creation failed:`, error);
+      util.deleteFile(targetGifPath);
+
+      // Update operation status to failed
+      if (operation) {
+        await videoService.updateOperationStatus(operation.id, 'failed', null, error.message);
+      }
+
+      throw error;
+    }
+  }
+
+  async processCropImage(bullJob) {
+    const { imageId, width, height, x, y } = bullJob.data;
+
+    const image = await videoService.findByVideoId(imageId);
+    if (!image) {
+      throw new Error(`Image ${imageId} not found`);
+    }
+
+    const originalImagePath = `./storage/${image.video_id}/original.${image.extension}`;
+    const targetImagePath = `./storage/${image.video_id}/cropped_${width}x${height}x${x}x${y}.${image.extension}`;
+
+    // Find the operation
+    const operation = await videoService.findOperation(imageId, 'crop', { width, height, x, y });
+
+    try {
+      // Update progress: Starting
+      await bullJob.progress(10);
+
+      // Update operation status to processing
+      if (operation) {
+        await videoService.updateOperationStatus(operation.id, 'processing');
+      }
+
+      // Crop image
+      await bullJob.progress(25);
+      await FF.cropImage(originalImagePath, targetImagePath, width, height, x, y);
+
+      // Update progress: Processing complete
+      await bullJob.progress(75);
+
+      // Update operation status to completed
+      if (operation) {
+        await videoService.updateOperationStatus(operation.id, 'completed', targetImagePath);
+      }
+
+      // Complete
+      await bullJob.progress(100);
+
+      console.log(`✅ Image cropped ${imageId} to ${width}x${height} at (${x},${y})`);
+
+      return JSON.stringify({ width, height, x, y, outputPath: targetImagePath });
+    } catch (error) {
+      console.error(`❌ Image crop failed:`, error);
+      util.deleteFile(targetImagePath);
+
+      // Update operation status to failed
+      if (operation) {
+        await videoService.updateOperationStatus(operation.id, 'failed', null, error.message);
+      }
+
+      throw error;
+    }
+  }
+
+  async processResizeImage(bullJob) {
+    const { imageId, width, height } = bullJob.data;
+
+    const image = await videoService.findByVideoId(imageId);
+    if (!image) {
+      throw new Error(`Image ${imageId} not found`);
+    }
+
+    const originalImagePath = `./storage/${image.video_id}/original.${image.extension}`;
+    const targetImagePath = `./storage/${image.video_id}/resized_${width}x${height}.${image.extension}`;
+
+    // Find the operation
+    const operation = await videoService.findOperation(imageId, 'resize-image', { width, height });
+
+    try {
+      // Update progress: Starting
+      await bullJob.progress(10);
+
+      // Update operation status to processing
+      if (operation) {
+        await videoService.updateOperationStatus(operation.id, 'processing');
+      }
+
+      // Resize image
+      await bullJob.progress(25);
+      await FF.resizeImage(originalImagePath, targetImagePath, width, height);
+
+      // Update progress: Processing complete
+      await bullJob.progress(75);
+
+      // Update operation status to completed
+      if (operation) {
+        await videoService.updateOperationStatus(operation.id, 'completed', targetImagePath);
+      }
+
+      // Complete
+      await bullJob.progress(100);
+
+      console.log(`✅ Image resized ${imageId} to ${width}x${height}`);
+
+      return JSON.stringify({ width, height, outputPath: targetImagePath });
+    } catch (error) {
+      console.error(`❌ Image resize failed:`, error);
+      util.deleteFile(targetImagePath);
+
+      // Update operation status to failed
+      if (operation) {
+        await videoService.updateOperationStatus(operation.id, 'failed', null, error.message);
+      }
+
+      throw error;
+    }
+  }
+
+  async processConvertImage(bullJob) {
+    const { imageId, targetFormat, originalFormat } = bullJob.data;
+
+    const image = await videoService.findByVideoId(imageId);
+    if (!image) {
+      throw new Error(`Image ${imageId} not found`);
+    }
+
+    const originalImagePath = `./storage/${image.video_id}/original.${image.extension}`;
+    const targetImagePath = `./storage/${image.video_id}/converted.${targetFormat}`;
+
+    // Find the operation
+    const operation = await videoService.findOperation(imageId, 'convert-image', {
+      targetFormat,
+      originalFormat: originalFormat || image.extension
+    });
+
+    try {
+      // Update progress: Starting
+      await bullJob.progress(10);
+
+      // Update operation status to processing
+      if (operation) {
+        await videoService.updateOperationStatus(operation.id, 'processing');
+      }
+
+      // Convert image format
+      await bullJob.progress(25);
+      await FF.convertImageFormat(originalImagePath, targetImagePath, targetFormat);
+
+      // Update progress: Processing complete
+      await bullJob.progress(75);
+
+      // Update operation status to completed
+      if (operation) {
+        await videoService.updateOperationStatus(operation.id, 'completed', targetImagePath);
+      }
+
+      // Complete
+      await bullJob.progress(100);
+
+      console.log(`✅ Image converted ${imageId} from ${image.extension} to ${targetFormat}`);
+
+      return JSON.stringify({ targetFormat, outputPath: targetImagePath });
+    } catch (error) {
+      console.error(`❌ Image conversion failed:`, error);
+      util.deleteFile(targetImagePath);
 
       // Update operation status to failed
       if (operation) {

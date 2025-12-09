@@ -436,6 +436,88 @@ class JobHistoryService {
 
     return parseInt(result.rows[0].count);
   }
+
+  /**
+   * Get recent jobs for analytics dashboard
+   * Returns all recent jobs with video and user information
+   * @param {number} limit - Number of jobs to return
+   * @param {number} offset - Offset for pagination
+   * @returns {Promise<array>} Recent jobs
+   */
+  async getRecentJobs(limit = 50, offset = 0) {
+    const result = await query(
+      `SELECT
+        jh.job_id,
+        jh.video_id,
+        jh.user_id,
+        jh.type as operation,
+        jh.status,
+        jh.duration as duration_ms,
+        jh.created_at,
+        jh.started_at,
+        jh.completed_at,
+        jh.failed_at,
+        jh.error,
+        jh.progress,
+        v.name as video_name,
+        u.username
+       FROM job_history jh
+       LEFT JOIN videos v ON jh.video_id = v.video_id
+       LEFT JOIN users u ON jh.user_id = u.id
+       ORDER BY jh.created_at DESC
+       LIMIT $1 OFFSET $2`,
+      [limit, offset]
+    );
+
+    return result.rows;
+  }
+
+  /**
+   * Get job statistics for a time range
+   * Returns aggregated statistics for analytics
+   * @param {Date} startTime - Start of time range
+   * @param {Date} endTime - End of time range
+   * @returns {Promise<object>} Statistics
+   */
+  async getJobStatistics(startTime, endTime) {
+    // Get overall statistics
+    const stats = await query(
+      `SELECT
+        COUNT(*) as total_jobs,
+        COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed_jobs,
+        COUNT(CASE WHEN status = 'failed' THEN 1 END) as failed_jobs,
+        COUNT(CASE WHEN status = 'active' THEN 1 END) as active_jobs,
+        COUNT(CASE WHEN status = 'queued' THEN 1 END) as queued_jobs,
+        AVG(CASE WHEN duration IS NOT NULL THEN duration END) as avg_duration_ms,
+        MIN(CASE WHEN duration IS NOT NULL THEN duration END) as min_duration_ms,
+        MAX(CASE WHEN duration IS NOT NULL THEN duration END) as max_duration_ms,
+        ROUND(
+          COUNT(CASE WHEN status = 'completed' THEN 1 END)::numeric /
+          NULLIF(COUNT(*), 0) * 100,
+          2
+        ) as success_rate_percent
+      FROM job_history
+      WHERE created_at BETWEEN $1 AND $2`,
+      [startTime, endTime]
+    );
+
+    // Get stats by type
+    const byType = await query(
+      `SELECT
+        type,
+        COUNT(*) as count,
+        AVG(CASE WHEN duration IS NOT NULL THEN duration END) as avg_duration
+      FROM job_history
+      WHERE created_at BETWEEN $1 AND $2
+      GROUP BY type`,
+      [startTime, endTime]
+    );
+
+    return {
+      ...stats.rows[0],
+      by_type: byType.rows
+    };
+  }
 }
 
 module.exports = new JobHistoryService();

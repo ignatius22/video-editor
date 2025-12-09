@@ -13,8 +13,6 @@ exports.authenticate = async (req, res, next) => {
     "POST /api/image/crop",
     "POST /api/image/resize",
     "POST /api/image/convert",
-    "GET /get-image-asset",
-    "GET /get-video-asset",
   ];
 
   // Extract the pathname without query parameters
@@ -22,7 +20,11 @@ exports.authenticate = async (req, res, next) => {
   const requestPath = req.method + " " + pathname;
   const isImageByIdRoute = req.method === "GET" && pathname.startsWith("/api/image/");
 
-  if (routesToAuthenticate.indexOf(requestPath) !== -1 || isImageByIdRoute) {
+  // Allow asset routes (thumbnails, images, videos) for authenticated users only
+  // but don't block if they have a valid session cookie
+  const isAssetRoute = pathname === "/get-image-asset" || pathname === "/get-video-asset";
+
+  if ((routesToAuthenticate.indexOf(requestPath) !== -1 || isImageByIdRoute || isAssetRoute)) {
     // If we have a token cookie, validate it
     if (req.headers.cookie) {
       const token = req.headers.cookie.split("=")[1];

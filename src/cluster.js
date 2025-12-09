@@ -1,8 +1,12 @@
 const cluster = require("node:cluster");
 const BullQueue = require("../lib/BullQueue.js");
 
+// Export queue instance for access from controllers
+let queueInstance = null;
+
 if (cluster.isPrimary) {
   const jobs = new BullQueue();
+  queueInstance = jobs;
 
   // Retry configuration
   const MAX_RETRIES = 3;
@@ -176,3 +180,6 @@ if (cluster.isPrimary) {
 } else {
   require("./index.js");
 }
+
+// Export queue instance for use in controllers
+module.exports = { queueInstance };

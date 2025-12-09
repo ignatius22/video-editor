@@ -2,6 +2,7 @@
 const User = require("./controllers/user");
 const Video = require("./controllers/video");
 const Image = require("./controllers/image");
+const Job = require("./controllers/job");
 
 module.exports = (server) => {
   // ------------------------------------------------ //
@@ -67,4 +68,17 @@ module.exports = (server) => {
 
   // Get image by ID (returns blob)
   server.get("/api/image/:imageId", Image.getImageById);
+
+  // ------------------------------------------------ //
+  // ************ JOB/ANALYTICS ROUTES ************* //
+  // ------------------------------------------------ //
+
+  // Get queue statistics (real-time data)
+  server.get("/api/jobs/queue/stats", Job.getQueueStats);
+
+  // Get job history from database
+  server.get("/api/jobs/history", Job.getJobHistory);
+
+  // Get aggregated job statistics
+  server.get("/api/jobs/statistics", Job.getJobStatistics);
 };
