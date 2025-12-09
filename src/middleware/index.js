@@ -12,12 +12,15 @@ exports.authenticate = async (req, res, next) => {
     "POST /api/upload-image",
     "POST /api/image/crop",
     "POST /api/image/resize",
+    "POST /api/image/convert",
     "GET /get-image-asset",
+    "GET /get-video-asset",
   ];
 
-  // Extract the base path for dynamic routes (e.g., /api/image/:imageId)
-  const requestPath = req.method + " " + req.url;
-  const isImageByIdRoute = req.method === "GET" && req.url.startsWith("/api/image/");
+  // Extract the pathname without query parameters
+  const pathname = req.url.split('?')[0];
+  const requestPath = req.method + " " + pathname;
+  const isImageByIdRoute = req.method === "GET" && pathname.startsWith("/api/image/");
 
   if (routesToAuthenticate.indexOf(requestPath) !== -1 || isImageByIdRoute) {
     // If we have a token cookie, validate it

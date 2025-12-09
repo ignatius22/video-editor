@@ -59,6 +59,9 @@ module.exports = (server) => {
   // Resize an image (creates a new image file)
   server.post("/api/image/resize", Image.resizeImage);
 
+  // Convert image format
+  server.post("/api/image/convert", Image.convertImage);
+
   // Return an image asset to the client
   server.get("/get-image-asset", Image.getImageAsset);
 

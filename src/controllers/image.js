@@ -3,9 +3,7 @@ const cluster = require("cluster");
 const crypto = require("crypto");
 const fsSync = require("fs");
 const fs = require("fs").promises;
-const { promisify } = require("util");
-const stream = require("stream");
-const pipeline = promisify(stream.pipeline);
+const Busboy = require("busboy");
 const util = require("../../lib/util");
 const imageService = require("../../database/services/imageService");
 const FF = require("../../lib/FF");
@@ -62,10 +60,31 @@ const uploadImage = async (req, res, handleErr) => {
 
     const normalizedExt = extension === "jpeg" ? "jpg" : extension;
     const fullPath = path.join(imageDir, `original.${normalizedExt}`);
-    const fileStream = fsSync.createWriteStream(fullPath);
 
-    // Pipe request to file safely
-    await pipeline(req, fileStream);
+    // Parse multipart form data using busboy
+    const busboy = Busboy({ headers: req.headers });
+    let fileReceived = false;
+
+    await new Promise((resolve, reject) => {
+      busboy.on("file", (_fieldname, file, _info) => {
+        fileReceived = true;
+        const fileStream = fsSync.createWriteStream(fullPath);
+
+        file.pipe(fileStream);
+
+        fileStream.on("finish", resolve);
+        fileStream.on("error", reject);
+        file.on("error", reject);
+      });
+
+      busboy.on("error", reject);
+
+      req.pipe(busboy);
+    });
+
+    if (!fileReceived) {
+      throw new Error("No file received in upload");
+    }
 
     // Get image dimensions using FFmpeg
     const dimensions = await FF.getDimensions(fullPath);
@@ -158,7 +177,8 @@ const cropImage = async (req, res, handleErr) => {
 
     // Queue the job
     if (cluster.isPrimary && jobs) {
-      await jobs.createJob('cropImage', {
+      await jobs.enqueue({
+        type: 'cropImage',
         imageId,
         operation_id: operation.id,
         ...parameters
@@ -228,7 +248,8 @@ const resizeImage = async (req, res, handleErr) => {
 
     // Queue the job
     if (cluster.isPrimary && jobs) {
-      await jobs.createJob('resizeImage', {
+      await jobs.enqueue({
+        type: 'resizeImage',
         imageId,
         operation_id: operation.id,
         ...parameters
@@ -251,6 +272,87 @@ const resizeImage = async (req, res, handleErr) => {
 };
 
 /**
+ * Convert an image to a different format
+ */
+const convertImage = async (req, res, handleErr) => {
+  const { imageId, targetFormat } = req.body;
+
+  if (!imageId || !targetFormat) {
+    return handleErr({
+      status: 400,
+      message: "imageId and targetFormat are required.",
+    });
+  }
+
+  const FORMATS_SUPPORTED = ["jpg", "jpeg", "png", "webp"];
+  if (!FORMATS_SUPPORTED.includes(targetFormat.toLowerCase())) {
+    return handleErr({
+      status: 400,
+      message: "Only these formats are allowed: jpg, jpeg, png, webp",
+    });
+  }
+
+  try {
+    // Verify image exists and belongs to user
+    const image = await imageService.findByImageId(imageId);
+    if (!image) {
+      return handleErr({ status: 404, message: "Image not found." });
+    }
+
+    if (image.user_id !== req.userId) {
+      return handleErr({ status: 403, message: "Unauthorized access to image." });
+    }
+
+    const normalizedFormat = targetFormat.toLowerCase() === "jpeg" ? "jpg" : targetFormat.toLowerCase();
+
+    const parameters = {
+      targetFormat: normalizedFormat,
+      originalFormat: image.extension
+    };
+
+    // Check if this operation already exists
+    const existingOp = await imageService.findOperation(imageId, 'convert', parameters);
+    if (existingOp && (existingOp.status === 'completed' || existingOp.status === 'processing')) {
+      return res.status(200).json({
+        status: "success",
+        message: existingOp.status === 'completed' ? "Conversion already completed" : "Conversion already in progress",
+        operation: existingOp
+      });
+    }
+
+    // Create operation record
+    const operation = await imageService.addOperation(imageId, {
+      type: 'convert',
+      status: 'pending',
+      parameters
+    });
+
+    // Queue the job
+    if (cluster.isPrimary && jobs) {
+      await jobs.enqueue({
+        type: 'convertImage',
+        imageId,
+        operation_id: operation.id,
+        ...parameters
+      });
+    }
+
+    return res.status(200).json({
+      status: "success",
+      message: "Convert job queued successfully.",
+      operation
+    });
+  } catch (e) {
+    console.error("Convert image error:", e);
+    return handleErr({
+      status: 500,
+      message: "Failed to queue convert operation.",
+      details: e.message,
+    });
+  }
+};
+
+/**
  * Get an image asset (original, thumbnail, cropped, or resized)
  */
 const getImageAsset = async (req, res, handleErr) => {
@@ -266,16 +368,15 @@ const getImageAsset = async (req, res, handleErr) => {
       return handleErr({ status: 404, message: "Image not found." });
     }
 
-    // Verify ownership
-    if (image.user_id !== req.userId) {
-      return handleErr({ status: 403, message: "Unauthorized access to image." });
-    }
-
     const imageDir = `./storage/${imageId}`;
     let filePath;
+    let filename;
+    let extension;
 
     switch (type) {
       case "thumbnail":
+        extension = "jpg";
+        filename = `${image.name}-thumbnail.${extension}`;
         filePath = path.join(imageDir, "thumbnail.jpg");
         break;
 
@@ -284,6 +385,8 @@ const getImageAsset = async (req, res, handleErr) => {
         if (!dimensions) {
           return handleErr({ status: 400, message: "dimensions required for crop type." });
         }
+        extension = "jpg";
+        filename = `${image.name}-crop-${dimensions}.${extension}`;
         filePath = path.join(imageDir, `crop_${dimensions}.jpg`);
         break;
       }
@@ -293,12 +396,27 @@ const getImageAsset = async (req, res, handleErr) => {
         if (!dimensions) {
           return handleErr({ status: 400, message: "dimensions required for resize type." });
         }
+        extension = "jpg";
+        filename = `${image.name}-${dimensions}.${extension}`;
         filePath = path.join(imageDir, `${dimensions}.jpg`);
+        break;
+      }
+
+      case "convert": {
+        const { format } = req.query;
+        if (!format) {
+          return handleErr({ status: 400, message: "format required for convert type." });
+        }
+        extension = format.toLowerCase();
+        filename = `${image.name}-converted.${extension}`;
+        filePath = path.join(imageDir, `converted.${extension}`);
         break;
       }
 
       case "original":
       default:
+        extension = image.extension;
+        filename = `${image.name}.${extension}`;
         filePath = path.join(imageDir, `original.${image.extension}`);
         break;
     }
@@ -310,9 +428,19 @@ const getImageAsset = async (req, res, handleErr) => {
       return handleErr({ status: 404, message: "Image asset not found." });
     }
 
+    // Check if download is requested
+    const { download } = req.query;
+
     // Set appropriate headers
-    const mimeType = util.getMimeType(path.extname(filePath).substring(1));
+    const mimeType = util.getMimeFromExtension(extension);
     res.setHeader("Content-Type", mimeType || "application/octet-stream");
+
+    if (download === 'true') {
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    } else {
+      res.setHeader("Content-Disposition", `inline; filename="${filename}"`);
+    }
+
     res.setHeader("Cache-Control", "public, max-age=86400"); // 24 hours
 
     // Stream the file
@@ -369,7 +497,7 @@ const getImageById = async (req, res, handleErr) => {
     }
 
     // Set appropriate headers
-    const mimeType = util.getMimeType(image.extension);
+    const mimeType = util.getMimeFromExtension(image.extension);
     res.setHeader("Content-Type", mimeType || "application/octet-stream");
     res.setHeader("Content-Disposition", `inline; filename="${image.name}.${image.extension}"`);
 
@@ -400,6 +528,7 @@ module.exports = {
   uploadImage,
   cropImage,
   resizeImage,
+  convertImage,
   getImageAsset,
   getImageById
 };
