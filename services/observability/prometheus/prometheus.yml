@@ -67,6 +67,16 @@ scrape_configs:
     metrics_path: '/metrics'
     scrape_interval: 10s
 
+  # Image Service
+  - job_name: 'image-service'
+    static_configs:
+      - targets: ['image-service:3004']
+        labels:
+          service: 'image-service'
+          tier: 'backend'
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+
   # PostgreSQL Exporter (optional - requires postgres_exporter)
   # - job_name: 'postgres'
   #   static_configs:

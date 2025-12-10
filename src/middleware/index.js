@@ -8,9 +8,23 @@ exports.authenticate = async (req, res, next) => {
     "DELETE /api/logout",
     "POST /api/upload-video",
     "GET /api/videos",
+    "GET /api/images",
+    "POST /api/upload-image",
+    "POST /api/image/crop",
+    "POST /api/image/resize",
+    "POST /api/image/convert",
   ];
 
-  if (routesToAuthenticate.indexOf(req.method + " " + req.url) !== -1) {
+  // Extract the pathname without query parameters
+  const pathname = req.url.split('?')[0];
+  const requestPath = req.method + " " + pathname;
+  const isImageByIdRoute = req.method === "GET" && pathname.startsWith("/api/image/");
+
+  // Allow asset routes (thumbnails, images, videos) for authenticated users only
+  // but don't block if they have a valid session cookie
+  const isAssetRoute = pathname === "/get-image-asset" || pathname === "/get-video-asset";
+
+  if ((routesToAuthenticate.indexOf(requestPath) !== -1 || isImageByIdRoute || isAssetRoute)) {
     // If we have a token cookie, validate it
     if (req.headers.cookie) {
       const token = req.headers.cookie.split("=")[1];
@@ -33,9 +47,24 @@ exports.authenticate = async (req, res, next) => {
 };
 
 exports.serverIndex = (req, res, next) => {
-  const routes = ["/", "/login", "/profile"];
+  const routes = [
+    "/",
+    "/login",
+    "/profile",
+    "/operations",
+    "/images",
+    "/image-operations",
+    "/analytics"
+  ];
 
-  if (routes.indexOf(req.url) !== -1 && req.method === "GET") {
+  // Also handle dynamic routes like /operations/:videoId and /image-operations/:imageId
+  const isDynamicOperationsRoute = req.url.startsWith("/operations/");
+  const isDynamicImageOperationsRoute = req.url.startsWith("/image-operations/");
+
+  if (
+    (routes.indexOf(req.url) !== -1 || isDynamicOperationsRoute || isDynamicImageOperationsRoute) &&
+    req.method === "GET"
+  ) {
     return res
       .status(200)
       .sendFile(path.join(__dirname, "../../public/index.html"), "text/html");

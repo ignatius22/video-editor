@@ -348,6 +348,42 @@ class VideoService {
 
     return result.rows;
   }
+
+  /**
+   * Get upload statistics
+   * @param {object} options - Optional filters (startDate, userId)
+   * @returns {Promise<object>} Upload statistics
+   */
+  async getUploadStats(options = {}) {
+    const { startDate, userId } = options;
+
+    let query_text = `
+      SELECT
+        COUNT(*) FILTER (WHERE metadata->>'type' = 'video' OR metadata->>'type' IS NULL) as total_videos,
+        COUNT(*) FILTER (WHERE metadata->>'type' = 'image') as total_images,
+        COUNT(*) FILTER (WHERE (metadata->>'type' = 'video' OR metadata->>'type' IS NULL) AND created_at >= $1) as recent_videos,
+        COUNT(*) FILTER (WHERE metadata->>'type' = 'image' AND created_at >= $1) as recent_images
+      FROM videos
+      WHERE 1=1
+    `;
+
+    const params = [startDate || new Date(0)];
+    let paramCount = 2;
+
+    if (userId) {
+      query_text += ` AND user_id = $${paramCount}`;
+      params.push(userId);
+    }
+
+    const result = await query(query_text, params);
+
+    return {
+      totalVideos: parseInt(result.rows[0].total_videos) || 0,
+      totalImages: parseInt(result.rows[0].total_images) || 0,
+      recentVideos: parseInt(result.rows[0].recent_videos) || 0,
+      recentImages: parseInt(result.rows[0].recent_images) || 0
+    };
+  }
 }
 
 module.exports = new VideoService();

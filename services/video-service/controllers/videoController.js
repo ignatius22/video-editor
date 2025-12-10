@@ -286,7 +286,7 @@ const convertVideo = async (req, res) => {
  * ----------------------------------------
  */
 const getVideoAsset = async (req, res) => {
-  const { videoId, type, format, dimensions } = req.query;
+  const { videoId, type, format, dimensions, startTime, endTime } = req.query;
 
   try {
     const video = await videoService.findByVideoId(videoId);
@@ -335,13 +335,69 @@ const getVideoAsset = async (req, res) => {
           `../../../storage/${videoId}/converted.${extension}`
         );
 
-        const op = await videoService.findOperation(videoId, "convert", {
+        const convertOp = await videoService.findOperation(videoId, "convert", {
           targetFormat: extension.toLowerCase(),
         });
 
-        if (!op || op.status !== "completed") {
+        if (!convertOp || convertOp.status !== "completed") {
           return res.status(400).json({
             error: `Conversion to ${extension.toUpperCase()} not complete.`,
+          });
+        }
+        break;
+
+      case "trim":
+        extension = video.extension;
+        if (!startTime || !endTime) {
+          return res.status(400).json({
+            error: "startTime and endTime are required for trimmed videos.",
+          });
+        }
+        filePath = path.join(
+          __dirname,
+          `../../../storage/${videoId}/trimmed_${startTime}-${endTime}.${extension}`
+        );
+
+        const trimOp = await videoService.findOperation(videoId, "trim", {
+          startTime: parseFloat(startTime),
+          endTime: parseFloat(endTime),
+        });
+
+        if (!trimOp || trimOp.status !== "completed") {
+          return res.status(400).json({
+            error: "Video trim not complete.",
+          });
+        }
+        break;
+
+      case "watermark":
+        extension = video.extension;
+        filePath = path.join(
+          __dirname,
+          `../../../storage/${videoId}/watermarked.${extension}`
+        );
+
+        const watermarkOp = await videoService.findOperation(videoId, "watermark");
+
+        if (!watermarkOp || watermarkOp.status !== "completed") {
+          return res.status(400).json({
+            error: "Watermarked video not complete.",
+          });
+        }
+        break;
+
+      case "gif":
+        extension = "gif";
+        filePath = path.join(
+          __dirname,
+          `../../../storage/${videoId}/video.gif`
+        );
+
+        const gifOp = await videoService.findOperation(videoId, "create-gif");
+
+        if (!gifOp || gifOp.status !== "completed") {
+          return res.status(400).json({
+            error: "GIF creation not complete.",
           });
         }
         break;
@@ -352,161 +408,51 @@ const getVideoAsset = async (req, res) => {
 
     await fs.access(filePath);
     const stat = await fs.stat(filePath);
-    const readStream = fsSync.createReadStream(filePath);
 
+    // Create read stream with high water mark for better performance
+    const readStream = fsSync.createReadStream(filePath, {
+      highWaterMark: 64 * 1024 // 64KB chunks
+    });
+
+    // Handle stream errors before piping
+    readStream.on("error", (err) => {
+      console.error("[Video Service] Stream error:", err);
+      if (!res.headersSent) {
+        res.status(500).json({ error: "Error streaming asset." });
+      }
+      readStream.destroy();
+    });
+
+    // Close the stream if client disconnects
+    res.on("close", () => {
+      if (readStream && !readStream.destroyed) {
+        readStream.destroy();
+      }
+    });
+
+    // Set content headers
     res.setHeader("Content-Type", util.getMimeFromExtension(extension));
     res.setHeader("Content-Length", stat.size);
+    res.setHeader("Accept-Ranges", "bytes"); // Enable range requests
+
+    // Cache thumbnails aggressively to reduce requests
+    if (type === "thumbnail") {
+      res.setHeader("Cache-Control", "public, max-age=86400, immutable"); // 24 hours
+      res.setHeader("ETag", `"${videoId}-${stat.size}-${stat.mtimeMs}"`);
+    }
 
     readStream.pipe(res);
+
+    // Handle pipe completion
+    readStream.on("end", () => {
+      if (!res.writableEnded) {
+        res.end();
+      }
+    });
   } catch (e) {
     console.error("[Video Service] Asset error:", e);
     res.status(404).json({ error: "Asset not found." });
   }
-};
-
-/**
- * ----------------------------------------
- * WATERMARK VIDEO
- * ----------------------------------------
- */
-
-/**
- * ----------------------------------------
- * TRIM VIDEO
- * ----------------------------------------
- */
-
-/**
- * ----------------------------------------
- * UPLOAD IMAGE
- * ----------------------------------------
- */
-const uploadImage = async (req, res) => {
-  const specifiedFileName = req.headers.filename;
-  if (!specifiedFileName)
-    return res.status(400).json({ error: "Filename header is required." });
-
-  const extension = path.extname(specifiedFileName).substring(1).toLowerCase();
-  const name = path.parse(specifiedFileName).name;
-  const imageId = crypto.randomBytes(4).toString("hex");
-
-  if (!["jpg", "jpeg", "png", "gif", "webp"].includes(extension)) {
-    return res.status(400).json({ error: "Unsupported image format" });
-  }
-
-  try {
-    const imageDir = path.join(__dirname, `../../../storage/${imageId}`);
-    await fs.mkdir(imageDir, { recursive: true });
-
-    const fullPath = path.join(imageDir, `original.${extension}`);
-    const fileStream = fsSync.createWriteStream(fullPath);
-
-    await pipeline(req, fileStream);
-
-    const dimensions = await FF.getDimensions(fullPath);
-
-    await videoService.createVideo({
-      videoId: imageId,
-      userId: req.userId,
-      name,
-      extension,
-      dimensions,
-      metadata: { type: "image" },
-    });
-
-    await req.app.locals.eventBus.publish(EventTypes.IMAGE_UPLOADED, {
-      imageId,
-      userId: req.userId,
-      name,
-      extension,
-      dimensions,
-    });
-
-    // Instrumentation: increment image uploads
-    try {
-      metrics.appImageUploads.labels('video-service').inc();
-    } catch (e) {
-      // ignore metric errors
-    }
-
-    res.status(201).json({
-      status: "success",
-      message: "Image uploaded!",
-      imageId,
-      name,
-      dimensions,
-    });
-  } catch (e) {
-    console.error("[Video Service] Image upload error:", e);
-
-    try {
-      await fs.rm(path.join(__dirname, `../../../storage/${imageId}`), {
-        recursive: true,
-        force: true,
-      });
-    } catch {}
-
-    res.status(500).json({
-      error: "Failed to upload image.",
-      details: e.message,
-    });
-  }
-};
-
-/**
- * ----------------------------------------
- * CROP IMAGE
- * ----------------------------------------
- */
-const cropImage = async (req, res) => {
-  const { imageId, width, height, x, y } = req.body;
-
-  if (!imageId || !width || !height) {
-    return res.status(400).json({ error: "imageId, width, height required" });
-  }
-
-  const image = await videoService.findByVideoId(imageId);
-  if (!image) return res.status(404).json({ error: "Image not found." });
-  if (image.metadata?.type !== "image") {
-    return res.status(400).json({ error: "This endpoint is for images only" });
-  }
-
-  const cropX = x || 0;
-  const cropY = y || 0;
-
-  if (
-    cropX + width > image.dimensions.width ||
-    cropY + height > image.dimensions.height
-  ) {
-    return res.status(400).json({
-      error: "Crop area exceeds image bounds.",
-    });
-  }
-
-  const parameters = { width, height, x: cropX, y: cropY };
-
-  await videoService.addOperation(imageId, {
-    type: "crop",
-    status: "pending",
-    parameters,
-  });
-
-  // Instrumentation: job created
-  try {
-    metrics.appJobsCreated.labels('video-service', 'crop', 'image').inc();
-  } catch (e) {}
-
-  await req.app.locals.eventBus.publish(EventTypes.IMAGE_PROCESSING_REQUESTED, {
-    imageId,
-    userId: req.userId,
-    operation: "crop",
-    parameters,
-  });
-
-  res.status(200).json({
-    status: "success",
-    message: "Image cropping started.",
-  });
 };
 
 /**
@@ -600,80 +546,221 @@ const trimVideo = async (req, res) => {
  * POST /watermark
  */
 const watermarkVideo = async (req, res) => {
-  const { videoId, text, x, y, fontSize, fontColor, opacity } = req.body;
+  const Busboy = require('busboy');
+  const fsSync = require('fs');
+  const path = require('path');
 
-  // Validate required fields
-  if (!videoId || !text) {
-    return res.status(400).json({
-      error: "videoId and text are required!",
-    });
-  }
+  // Check content type to determine if this is image or text watermark
+  const contentType = req.headers['content-type'] || '';
+  const isMultipart = contentType.includes('multipart/form-data');
 
-  // Validate text length
-  if (text.length > 100) {
-    return res.status(400).json({
-      error: "Watermark text must be 100 characters or less.",
-    });
-  }
+  if (isMultipart) {
+    // Handle image watermark upload
+    let videoId, position, opacity;
+    let watermarkImagePath;
+    let fileReceived = false;
 
-  try {
-    // Check if video exists
-    const video = await videoService.findByVideoId(videoId);
-    if (!video) {
-      return res.status(404).json({ error: "Video not found." });
-    }
-
-    // Build watermark options
-    const options = {};
-    if (x !== undefined) options.x = x;
-    if (y !== undefined) options.y = y;
-    if (fontSize !== undefined) options.fontSize = fontSize;
-    if (fontColor !== undefined) options.fontColor = fontColor;
-    if (opacity !== undefined) options.opacity = opacity;
-
-    // Add watermark operation to database
-    await videoService.addOperation(videoId, {
-      type: "watermark",
-      status: "pending",
-      parameters: { text, ...options },
-    });
-
-    // Instrumentation: job created
     try {
-      metrics.appJobsCreated.labels('video-service', 'watermark', 'video').inc();
-    } catch (e) {}
+      const busboy = Busboy({ headers: req.headers });
 
-    // Publish VIDEO_PROCESSING_REQUESTED event
-    try {
-      await req.app.locals.eventBus.publish(
-        EventTypes.VIDEO_PROCESSING_REQUESTED,
-        {
-          videoId,
-          userId: req.userId,
-          operation: "watermark",
-          parameters: { text, ...options },
-        }
-      );
-      console.log(
-        `[Video Service] Published VIDEO_PROCESSING_REQUESTED event for videoId: ${videoId}`
-      );
+      await new Promise((resolve, reject) => {
+        busboy.on('field', (fieldname, value) => {
+          if (fieldname === 'videoId') videoId = value;
+          if (fieldname === 'position') position = value;
+          if (fieldname === 'opacity') opacity = parseFloat(value);
+        });
 
-      res.status(200).json({
-        status: "success",
-        message: "The video is now being watermarked!",
+        busboy.on('file', (fieldname, file, info) => {
+          if (fieldname !== 'watermark') {
+            file.resume();
+            return;
+          }
+
+          fileReceived = true;
+          const { filename } = info;
+          const extension = path.extname(filename).substring(1).toLowerCase();
+
+          // Validate image format
+          const FORMATS_SUPPORTED = ['jpg', 'jpeg', 'png', 'webp'];
+          if (!FORMATS_SUPPORTED.includes(extension)) {
+            reject(new Error('Only jpg, jpeg, png, webp formats are allowed for watermark'));
+            return;
+          }
+
+          // Save watermark image to temp directory
+          const watermarkDir = `./storage/temp/watermarks`;
+
+          // Create directory synchronously to avoid async issues in event handler
+          if (!fsSync.existsSync(watermarkDir)) {
+            fsSync.mkdirSync(watermarkDir, { recursive: true });
+          }
+
+          const watermarkFileName = `watermark-${Date.now()}.${extension}`;
+          watermarkImagePath = path.join(watermarkDir, watermarkFileName);
+
+          const fileStream = fsSync.createWriteStream(watermarkImagePath);
+          file.pipe(fileStream);
+
+          fileStream.on('finish', resolve);
+          fileStream.on('error', reject);
+          file.on('error', reject);
+        });
+
+        busboy.on('error', reject);
+        req.pipe(busboy);
       });
+
+      if (!fileReceived || !watermarkImagePath) {
+        return res.status(400).json({
+          error: 'No watermark image file received.',
+        });
+      }
+
+      if (!videoId) {
+        return res.status(400).json({
+          error: 'videoId is required.',
+        });
+      }
+
+      // Check if video exists
+      const video = await videoService.findByVideoId(videoId);
+      if (!video) {
+        return res.status(404).json({ error: 'Video not found.' });
+      }
+
+      // Build watermark options
+      const options = {
+        watermarkType: 'image',
+        watermarkImagePath,
+      };
+      if (position) options.position = position;
+      if (opacity !== undefined) options.opacity = opacity;
+
+      // Add watermark operation to database
+      await videoService.addOperation(videoId, {
+        type: 'watermark',
+        status: 'pending',
+        parameters: options,
+      });
+
+      // Instrumentation: job created
+      try {
+        metrics.appJobsCreated.labels('video-service', 'watermark', 'video').inc();
+      } catch (e) {}
+
+      // Publish VIDEO_PROCESSING_REQUESTED event
+      try {
+        await req.app.locals.eventBus.publish(
+          EventTypes.VIDEO_PROCESSING_REQUESTED,
+          {
+            videoId,
+            userId: req.userId,
+            operation: 'watermark',
+            parameters: options,
+          }
+        );
+        console.log(
+          `[Video Service] Published VIDEO_PROCESSING_REQUESTED event for videoId: ${videoId}`
+        );
+
+        res.status(200).json({
+          status: 'success',
+          message: 'The video is now being watermarked with image!',
+        });
+      } catch (error) {
+        console.error('[Video Service] Failed to publish event:', error.message);
+        res.status(500).json({
+          error: 'Failed to start video watermarking.',
+          details: 'Event bus unavailable',
+        });
+      }
     } catch (error) {
-      console.error("[Video Service] Failed to publish event:", error.message);
+      console.error('[Video Service] Image watermark error:', error);
       res.status(500).json({
-        error: "Failed to start video watermarking.",
-        details: "Event bus unavailable",
+        error: 'Failed to upload watermark image.',
+        details: error.message,
       });
     }
-  } catch (error) {
-    console.error("[Video Service] Watermark video error:", error);
-    res.status(500).json({
-      error: "Failed to start video watermarking.",
-    });
+  } else {
+    // Handle text watermark (original implementation)
+    const { videoId, text, x, y, fontSize, fontColor, opacity } = req.body;
+
+    // Validate required fields
+    if (!videoId || !text) {
+      return res.status(400).json({
+        error: 'videoId and text are required!',
+      });
+    }
+
+    // Validate text length
+    if (text.length > 100) {
+      return res.status(400).json({
+        error: 'Watermark text must be 100 characters or less.',
+      });
+    }
+
+    try {
+      // Check if video exists
+      const video = await videoService.findByVideoId(videoId);
+      if (!video) {
+        return res.status(404).json({ error: 'Video not found.' });
+      }
+
+      // Build watermark options
+      const options = {
+        watermarkType: 'text',
+        text,
+      };
+      if (x !== undefined) options.x = x;
+      if (y !== undefined) options.y = y;
+      if (fontSize !== undefined) options.fontSize = fontSize;
+      if (fontColor !== undefined) options.fontColor = fontColor;
+      if (opacity !== undefined) options.opacity = opacity;
+
+      // Add watermark operation to database
+      await videoService.addOperation(videoId, {
+        type: 'watermark',
+        status: 'pending',
+        parameters: options,
+      });
+
+      // Instrumentation: job created
+      try {
+        metrics.appJobsCreated.labels('video-service', 'watermark', 'video').inc();
+      } catch (e) {}
+
+      // Publish VIDEO_PROCESSING_REQUESTED event
+      try {
+        await req.app.locals.eventBus.publish(
+          EventTypes.VIDEO_PROCESSING_REQUESTED,
+          {
+            videoId,
+            userId: req.userId,
+            operation: 'watermark',
+            parameters: options,
+          }
+        );
+        console.log(
+          `[Video Service] Published VIDEO_PROCESSING_REQUESTED event for videoId: ${videoId}`
+        );
+
+        res.status(200).json({
+          status: 'success',
+          message: 'The video is now being watermarked with text!',
+        });
+      } catch (error) {
+        console.error('[Video Service] Failed to publish event:', error.message);
+        res.status(500).json({
+          error: 'Failed to start video watermarking.',
+          details: 'Event bus unavailable',
+        });
+      }
+    } catch (error) {
+      console.error('[Video Service] Text watermark error:', error);
+      res.status(500).json({
+        error: 'Failed to start video watermarking.',
+      });
+    }
   }
 };
 
@@ -785,7 +872,5 @@ module.exports = {
   getVideoAsset,
   watermarkVideo,
   trimVideo,
-  uploadImage,
-  cropImage,
   createGif,
 };
