@@ -8,7 +8,7 @@ const authMiddleware = require("../middleware/auth");
  */
 
 // Get user's videos
-router.get("/videos", authMiddleware.authenticate, videoController.getVideos);
+router.get("/", authMiddleware.authenticate, videoController.getVideos);
 
 // Upload video
 router.post(

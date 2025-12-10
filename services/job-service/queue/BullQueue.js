@@ -472,7 +472,18 @@ class BullQueue extends EventEmitter {
   }
 
   async processWatermark(bullJob) {
-    const { videoId, text, x, y, fontSize, fontColor, opacity } = bullJob.data;
+    const {
+      videoId,
+      watermarkType,
+      watermarkImagePath,
+      text,
+      x,
+      y,
+      fontSize,
+      fontColor,
+      opacity,
+      position
+    } = bullJob.data;
 
     const video = await videoService.findByVideoId(videoId);
     if (!video) {
@@ -482,16 +493,39 @@ class BullQueue extends EventEmitter {
     const originalVideoPath = `./storage/${video.video_id}/original.${video.extension}`;
     const targetVideoPath = `./storage/${video.video_id}/watermarked.${video.extension}`;
 
-    // Build watermark options
-    const options = {};
-    if (x !== undefined) options.x = x;
-    if (y !== undefined) options.y = y;
-    if (fontSize !== undefined) options.fontSize = fontSize;
-    if (fontColor !== undefined) options.fontColor = fontColor;
-    if (opacity !== undefined) options.opacity = opacity;
+    // Determine watermark type (default to text for backward compatibility)
+    const isImageWatermark = watermarkType === 'image';
 
-    // Find the operation
-    const operation = await videoService.findOperation(videoId, 'watermark', { text, ...options });
+    // Build options based on watermark type
+    let options = {};
+    let operation;
+
+    if (isImageWatermark) {
+      // Image watermark options
+      if (position) options.position = position;
+      if (opacity !== undefined) options.opacity = opacity;
+
+      // Find the operation for image watermark
+      operation = await videoService.findOperation(videoId, 'watermark', {
+        watermarkType: 'image',
+        watermarkImagePath,
+        ...options
+      });
+    } else {
+      // Text watermark options
+      if (x !== undefined) options.x = x;
+      if (y !== undefined) options.y = y;
+      if (fontSize !== undefined) options.fontSize = fontSize;
+      if (fontColor !== undefined) options.fontColor = fontColor;
+      if (opacity !== undefined) options.opacity = opacity;
+
+      // Find the operation for text watermark
+      operation = await videoService.findOperation(videoId, 'watermark', {
+        watermarkType: 'text',
+        text,
+        ...options
+      });
+    }
 
     try {
       // Update progress: Starting
@@ -502,9 +536,26 @@ class BullQueue extends EventEmitter {
         await videoService.updateOperationStatus(operation.id, 'processing');
       }
 
-      // Add watermark
+      // Add watermark based on type
       await bullJob.progress(25);
-      await FF.watermarkVideo(originalVideoPath, targetVideoPath, text, options);
+
+      if (isImageWatermark) {
+        console.log(`🖼️  Adding image watermark to video ${videoId}`);
+        await FF.addImageWatermark(
+          originalVideoPath,
+          watermarkImagePath,
+          targetVideoPath,
+          options
+        );
+      } else {
+        console.log(`📝 Adding text watermark to video ${videoId}`);
+        await FF.watermarkVideo(
+          originalVideoPath,
+          targetVideoPath,
+          text,
+          options
+        );
+      }
 
       // Update progress: Processing complete
       await bullJob.progress(75);
@@ -517,9 +568,13 @@ class BullQueue extends EventEmitter {
       // Complete
       await bullJob.progress(100);
 
-      console.log(`✅ Watermark added to video ${videoId}`);
+      const watermarkInfo = isImageWatermark
+        ? { watermarkType: 'image', position, opacity }
+        : { watermarkType: 'text', text, ...options };
 
-      return JSON.stringify({ text, options, outputPath: targetVideoPath });
+      console.log(`✅ ${isImageWatermark ? 'Image' : 'Text'} watermark added to video ${videoId}`);
+
+      return JSON.stringify({ ...watermarkInfo, outputPath: targetVideoPath });
     } catch (error) {
       console.error(`❌ Watermark failed:`, error);
       util.deleteFile(targetVideoPath);

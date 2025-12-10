@@ -217,6 +217,99 @@ const getJobHistory = async (req, res) => {
   }
 };
 
+/**
+ * Get comprehensive analytics
+ * GET /analytics
+ */
+const getAnalytics = async (req, res) => {
+  const { days = 7 } = req.query;
+
+  try {
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - parseInt(days));
+
+    // Get overall job statistics
+    const overallStats = await jobHistoryService.getJobStats({ startDate });
+
+    // Get statistics by operation type
+    const statsByType = await jobHistoryService.getStatsByType({ startDate });
+
+    // Get job timeline (daily breakdown)
+    const timeline = await jobHistoryService.getJobTimeline(parseInt(days));
+
+    // Get current queue status
+    const waiting = await bullQueue.queue.getWaitingCount();
+    const active = await bullQueue.queue.getActiveCount();
+    const completed = await bullQueue.queue.getCompletedCount();
+    const failed = await bullQueue.queue.getFailedCount();
+
+    // Get recent failed jobs
+    const recentFailures = await jobHistoryService.getRecentFailedJobs(10);
+
+    // Get upload counts from the database
+    const videoService = require("../../shared/database/services/videoService");
+    const uploadStats = await videoService.getUploadStats({ startDate });
+
+    res.json({
+      period: {
+        days: parseInt(days),
+        startDate,
+        endDate: new Date()
+      },
+      overall: {
+        total: parseInt(overallStats.total) || 0,
+        completed: parseInt(overallStats.completed) || 0,
+        failed: parseInt(overallStats.failed) || 0,
+        active: parseInt(overallStats.active) || 0,
+        queued: parseInt(overallStats.queued) || 0,
+        avgDuration: parseFloat(overallStats.avg_duration) || 0,
+        successRate: parseFloat(overallStats.success_rate) || 0
+      },
+      queue: {
+        waiting,
+        active,
+        completed,
+        failed,
+        total: waiting + active + completed + failed
+      },
+      byOperation: statsByType.map(stat => ({
+        operation: stat.type,
+        total: parseInt(stat.total),
+        completed: parseInt(stat.completed),
+        failed: parseInt(stat.failed),
+        avgDuration: parseFloat(stat.avg_duration) || 0,
+        successRate: parseFloat(stat.success_rate) || 0
+      })),
+      timeline: timeline.map(day => ({
+        date: day.date,
+        total: parseInt(day.total),
+        completed: parseInt(day.completed),
+        failed: parseInt(day.failed),
+        avgDuration: parseFloat(day.avg_duration) || 0
+      })),
+      uploads: {
+        totalVideos: uploadStats.totalVideos || 0,
+        totalImages: uploadStats.totalImages || 0,
+        recentVideos: uploadStats.recentVideos || 0,
+        recentImages: uploadStats.recentImages || 0
+      },
+      recentFailures: recentFailures.slice(0, 5).map(job => ({
+        jobId: job.job_id,
+        operation: job.type,
+        error: job.error,
+        failedAt: job.failed_at,
+        videoId: job.video_id
+      }))
+    });
+  } catch (error) {
+    console.error("[Job Service] Get analytics error:", error);
+    res.status(500).json({
+      error: "Failed to get analytics",
+      details: error.message
+    });
+  }
+};
+
 module.exports = {
   initQueue,
   initEventBus,
@@ -224,5 +317,6 @@ module.exports = {
   enqueueJob,
   getJobStatus,
   getQueueStats,
-  getJobHistory
+  getJobHistory,
+  getAnalytics
 };

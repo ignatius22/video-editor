@@ -14,4 +14,7 @@ router.get('/queue/stats', jobController.getQueueStats);
 // Get job history
 router.get('/history', jobController.getJobHistory);
 
+// Get comprehensive analytics
+router.get('/analytics', jobController.getAnalytics);
+
 module.exports = router;
