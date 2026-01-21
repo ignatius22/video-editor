@@ -1,0 +1,96 @@
+version: '3.8'
+
+services:
+  # API Service - HTTP endpoints + WebSocket
+  api:
+    build:
+      context: .
+      target: api
+    container_name: video-editor-api
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - API_PORT=3000
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_NAME=video_editor
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - CORS_ORIGIN=*
+    volumes:
+      - ./storage:/app/storage
+    depends_on:
+      - db
+      - redis
+    restart: unless-stopped
+    networks:
+      - video-editor-network
+
+  # Worker Service - Background job processing
+  worker:
+    build:
+      context: .
+      target: worker
+    environment:
+      - NODE_ENV=production
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_NAME=video_editor
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - QUEUE_CONCURRENCY=5
+    volumes:
+      - ./storage:/app/storage
+    depends_on:
+      - db
+      - redis
+    deploy:
+      replicas: 2  # Run 2 worker instances
+    restart: unless-stopped
+    networks:
+      - video-editor-network
+
+  # PostgreSQL Database
+  db:
+    image: postgres:15-alpine
+    container_name: video-editor-db
+    environment:
+      - POSTGRES_DB=video_editor
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/schema.sql
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    networks:
+      - video-editor-network
+
+  # Redis - Job queue
+  redis:
+    image: redis:7-alpine
+    container_name: video-editor-redis
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+    networks:
+      - video-editor-network
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  video-editor-network:
+    driver: bridge

@@ -1,959 +1,531 @@
-# Video Editor Express
+# Video Editor Backend - 2-Service Architecture
 
-A production-ready, dual-deployment video processing platform built with Node.js and Express. Features a modern event-driven architecture with support for both monolithic and microservices deployment modes, complete with real-time job tracking, distributed processing, and comprehensive observability.
+A modern, scalable video and image processing platform built with Node.js. Features a clean 2-service architecture: API Service for HTTP endpoints and Worker Service for background processing.
 
-## Table of Contents
+## 🎯 Features
 
-- [Features](#features)
-- [Architecture](#architecture)
-- [Prerequisites](#prerequisites)
-- [Installation](#installation)
-- [Running the Application](#running-the-application)
-- [API Documentation](#api-documentation)
-- [Technology Stack](#technology-stack)
-- [Database Schema](#database-schema)
-- [Deployment](#deployment)
-- [Monitoring & Observability](#monitoring--observability)
-- [Project Structure](#project-structure)
-- [Advanced Features](#advanced-features)
-- [License](#license)
-
----
-
-## Features
-
-### Core Video Operations
-- **Video Upload**: Stream-based upload for MP4 and MOV formats
+### Video Operations
+- **Upload**: Stream-based upload for MP4 and MOV formats with automatic thumbnail generation
 - **Format Conversion**: Convert between MP4, MOV, AVI, WebM, MKV, and FLV
-- **Video Resizing**: Scale videos to custom dimensions
+- **Resizing**: Scale videos to custom dimensions
 - **Audio Extraction**: Extract audio tracks in AAC format
-- **Thumbnail Generation**: Automatic thumbnail creation on upload
 
-### Advanced Capabilities
+### Image Operations
+- **Upload**: Support for JPG, JPEG, PNG, GIF, and WebP formats
+- **Cropping**: Crop images with precise x,y coordinates and dimensions
+- **Resizing**: Scale images to custom dimensions
+- **Format Conversion**: Convert between image formats
+
+### Platform Features
 - **Real-Time Updates**: WebSocket-based job progress notifications
-- **Background Processing**: Redis-backed Bull queue with 5 concurrent workers
-- **Job Retry Logic**: Exponential backoff retry (3 attempts: 2s, 4s, 8s)
-- **Event-Driven Architecture**: RabbitMQ message broker for microservices
+- **Background Processing**: Redis-backed Bull queue with configurable concurrent workers
 - **User Authentication**: Session-based auth with PostgreSQL storage
-- **Distributed Tracing**: Jaeger integration for request tracking
-- **Metrics & Monitoring**: Prometheus + Grafana dashboards
-- **Queue Dashboard**: Bull Board for queue visualization
-
-### Deployment Modes
-- **Monolith**: Single-server or cluster mode (multi-core parallelization)
-- **Microservices**: Docker Compose with 4 services + full observability stack
+- **Asset Streaming**: Efficient streaming of processed assets with caching headers
+- **Job Tracking**: Comprehensive operation history and status tracking
 
 ---
 
-## Architecture
-
-### Deployment Mode 1: Monolith with Clustering
+## 🏗️ Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                     Primary Process                          │
-│  - Bull Queue Management                                     │
-│  - Retry Logic (exponential backoff)                         │
-│  - IPC Event Broadcasting                                    │
-└────────────┬────────────────────────────────────────────────┘
-             │
-     ┌───────┴───────┬───────────┬───────────┐
-     │               │           │           │
-┌────▼────┐    ┌────▼────┐ ┌───▼────┐ ┌───▼────┐
-│Worker 1 │    │Worker 2 │ │Worker 3│ │Worker N│
-│Express  │    │Express  │ │Express │ │Express │
-│Socket.IO│    │Socket.IO│ │Socket.IO│ │Socket.IO│
-└────┬────┘    └────┬────┘ └───┬────┘ └───┬────┘
-     │              │           │           │
-     └──────────────┴───────────┴───────────┘
-                    │
-          ┌─────────┴─────────┐
-          │                   │
-    ┌─────▼──────┐    ┌──────▼──────┐
-    │ PostgreSQL │    │    Redis    │
-    │  (Videos)  │    │(Bull Queue) │
-    └────────────┘    └─────────────┘
-```
-
-**Ports**: 8060 (HTTP/WebSocket), Bull Board at `/admin/queues`
-
-### Deployment Mode 2: Microservices
-
-```
-┌──────────────────────────────────────────────────────────────┐
-│                      API Gateway :3000                        │
-│  - Rate Limiting (100 req/15min)                             │
-│  - Proxy Routing                                             │
-│  - Prometheus Metrics                                        │
+│                   API SERVICE (port 3000)                    │
+│  - User authentication & sessions                            │
+│  - Video/image uploads & metadata                            │
+│  - Asset retrieval (streaming)                               │
+│  - Job submission to Redis queue                             │
+│  - Real-time WebSocket updates                               │
+│  - Express + PostgreSQL + Socket.IO                          │
 └──────────────┬───────────────────────────────────────────────┘
                │
-     ┌─────────┼─────────┬─────────────────┐
-     │         │         │                 │
-┌────▼─────┐ ┌▼────────┐ ┌▼────────┐ ┌───▼──────┐
-│User Svc  │ │Video Svc│ │Job Svc  │ │RabbitMQ  │
-│:3001     │ │:3002    │ │:3003    │ │:5672     │
-│- Auth    │ │- Upload │ │- Queue  │ │- Events  │
-│- Sessions│ │- Assets │ │- Workers│ │- PubSub  │
-└────┬─────┘ └┬────────┘ └┬────────┘ └────┬─────┘
-     │        │           │               │
-     └────────┴───────────┴───────────────┘
-              │           │
-     ┌────────┴──────┐    └──────────┐
-┌────▼────┐    ┌─────▼─────┐    ┌────▼────┐
-│PostgreSQL│    │   Redis   │    │Observability│
-│:5432     │    │   :6379   │    │Stack     │
-└──────────┘    └───────────┘    └──────────┘
-                                  - Prometheus:9090
-                                  - Grafana:3100
-                                  - Jaeger:16686
-                                  - Loki:3101
+               │ Bull Queue (Redis)
+               │
+               ↓
+┌─────────────────────────────────────────────────────────────┐
+│              WORKER SERVICE (background)                     │
+│  - Video processing (resize, convert)                        │
+│  - Image processing (crop, resize, convert)                  │
+│  - FFmpeg operations                                         │
+│  - Configurable concurrent workers (default: 5)              │
+│  - Progress tracking & database updates                      │
+│  - No HTTP server (queue consumer only)                      │
+└─────────────────────────────────────────────────────────────┘
+               │
+               ↓
+        Shared Resources:
+        - PostgreSQL (single database)
+        - File Storage (./storage volume)
+        - Redis (Bull queue)
 ```
+
+### Why 2 Services?
+
+- **✅ Separation of Concerns**: HTTP/API logic separate from heavy processing
+- **✅ Independent Scaling**: Scale workers independently during peak processing
+- **✅ Fault Isolation**: Processing failures don't affect API availability
+- **✅ Simple Deployment**: Easier than 5+ microservices, more flexible than monolith
+- **✅ Resource Optimization**: Workers can run on different hardware optimized for FFmpeg
 
 ---
 
-## Prerequisites
+## 📋 Prerequisites
 
-### Required
-- **Node.js** v12+ ([Download](https://nodejs.org/))
+- **Node.js** v18+ ([Download](https://nodejs.org/))
 - **PostgreSQL** 12+ ([Download](https://www.postgresql.org/download/))
 - **Redis** 6+ ([Download](https://redis.io/download))
 - **FFmpeg** with FFprobe ([Download](https://ffmpeg.org/download.html))
-
-### Optional (for Microservices)
-- **Docker** & **Docker Compose** ([Install](https://docs.docker.com/get-docker/))
-- **RabbitMQ** 3+ (or use Docker Compose)
+- **Docker** & **Docker Compose** (optional, for containerized deployment)
 
 ---
 
-## Installation
+## 🚀 Quick Start
 
-### 1. Clone Repository
+### Option 1: Docker Compose (Recommended)
+
 ```bash
+# Clone repository
 git clone <repository-url>
-cd video-editor-express
-```
+cd video-editor
 
-### 2. Install Dependencies
-```bash
-# Backend dependencies
-npm install
-
-# Frontend dependencies
-cd video-editor-client
-npm install
-cd ..
-```
-
-### 3. Database Setup
-```bash
-# Create PostgreSQL database
-createdb video_editor
-
-# Run schema migration
-psql video_editor < database/schema.sql
-
-# Verify tables created
-psql video_editor -c "\dt"
-# Expected: users, sessions, videos, video_operations, job_history
-```
-
-### 4. Start Redis
-```bash
-# Option 1: Local installation
-redis-server --daemonize yes
-
-# Option 2: Docker
-docker run -d -p 6379:6379 redis:7-alpine
-```
-
-### 5. Create Required Directories
-```bash
-mkdir -p public storage data
-```
-
-### 6. Build Frontend (Production)
-```bash
-cd video-editor-client
-npm run build
-cd ..
-```
-
----
-
-## Running the Application
-
-### Monolith Mode (Recommended for Development)
-
-#### Single Server Mode
-```bash
-npm start
-# Server: http://localhost:8060
-# Bull Board: http://localhost:8060/admin/queues
-# Frontend: http://localhost:8060/
-```
-
-#### Cluster Mode (Production)
-```bash
-npm run cluster
-# Spawns N workers (N = CPU cores)
-# Primary: Bull queue + retry logic
-# Workers: HTTP + WebSocket handlers
-```
-
-### Microservices Mode (Production with Observability)
-
-#### Using Docker Compose (Recommended)
-```bash
-cd services
+# Start all services
 docker-compose up -d
 
 # Check status
 docker-compose ps
 
 # View logs
-docker-compose logs -f api-gateway
-docker-compose logs -f video-service
+docker-compose logs -f
 
-# Stop all
+# Stop services
 docker-compose down
 ```
 
-**Access Points**:
-- API Gateway: http://localhost:3000
-- Grafana: http://localhost:3100 (admin/admin)
-- Prometheus: http://localhost:9090
-- Jaeger UI: http://localhost:16686
-- RabbitMQ Management: http://localhost:15672 (admin/admin123)
+**Access Points:**
+- API: http://localhost:3000
+- PostgreSQL: localhost:5432
+- Redis: localhost:6379
 
-#### Manual Startup (Local Development)
+### Option 2: Local Development
+
 ```bash
-cd services
+# 1. Install dependencies
+npm install
 
-# 1. Start infrastructure
-docker run -d -p 5672:5672 -p 15672:15672 \
-  -e RABBITMQ_DEFAULT_USER=admin \
-  -e RABBITMQ_DEFAULT_PASS=admin123 \
-  rabbitmq:3-management-alpine
+# 2. Set up database
+createdb video_editor
+psql video_editor < database/schema.sql
 
-# 2. Configure environment
-cp user-service/.env.example user-service/.env
-cp video-service/.env.example video-service/.env
-cp job-service/.env.example job-service/.env
-cp api-gateway/.env.example api-gateway/.env
+# 3. Start Redis
+redis-server
 
-# 3. Install dependencies
-for service in user-service video-service job-service api-gateway; do
-  cd $service && npm install && cd ..
-done
+# 4. Configure environment
+cp .env.example .env
+# Edit .env with your configuration
 
-# 4. Start services (separate terminals)
-./start-all.sh
+# 5. Create storage directory
+mkdir -p storage
 
-# Or manually:
-# Terminal 1: cd user-service && npm start
-# Terminal 2: cd video-service && npm start
-# Terminal 3: cd job-service && npm start
-# Terminal 4: cd api-gateway && npm start
+# 6. Start services
+npm run dev  # Starts both API and Worker with hot-reload
 ```
 
 ---
 
-## API Documentation
+## 📡 API Documentation
 
-### Monolith Mode Endpoints (Port 8060)
+### Authentication
 
-#### User Routes
+**Login**
 ```http
-POST   /api/login
-Body: { "username": "string", "password": "string" }
-Response: { "message": "success", "token": "string" }
+POST /api/auth/login
+Content-Type: application/json
 
-DELETE /api/logout
-Headers: Cookie with token
-Response: { "message": "Logged out successfully" }
-
-GET    /api/user
-Headers: Cookie with token
-Response: { "id": 1, "username": "string", "tier": "string" }
-
-PUT    /api/user
-Headers: Cookie with token
-Body: { "username": "string", "password": "string" }
-Response: { "message": "User updated successfully" }
-```
-
-#### Video Routes
-```http
-GET    /api/videos
-Headers: Cookie with token
-Response: [{ "videoId": "abc123", "name": "video.mp4", ... }]
-
-POST   /api/upload-video
-Headers:
-  - Cookie with token
-  - filename: "video.mp4"
-Body: Binary video stream
-Response: { "status": "success", "videoId": "abc123" }
-
-PUT    /api/video/resize
-Headers: Cookie with token
-Body: { "videoId": "abc123", "width": 1920, "height": 1080 }
-Response: { "status": "success", "message": "Video is being processed" }
-
-PUT    /api/video/convert?videoId=abc123
-Headers: Cookie with token
-Body: { "format": "webm" }
-Supported: mp4, mov, avi, webm, mkv, flv
-Response: { "status": "success", "message": "Conversion started" }
-
-PATCH  /api/video/extract-audio?videoId=abc123
-Headers: Cookie with token
-Response: { "status": "success", "message": "Audio extracted" }
-
-GET    /get-video-asset?videoId=abc123&type=thumbnail
-Types: thumbnail, audio, resize, original, converted
-Query Params:
-  - videoId (required)
-  - type (required)
-  - format (for type=converted)
-  - dimensions (for type=resize, e.g., "1920x1080")
-Response: Binary stream with appropriate MIME type
-```
-
-#### Admin Routes
-```http
-GET    /admin/queues
-Description: Bull Board dashboard for queue monitoring
-Features: Job inspection, retry, removal, queue pause/resume
-```
-
-### Microservices Mode Endpoints (Port 3000)
-
-#### Gateway Routes
-```http
-GET    /health
-Response: { "status": "ok", "timestamp": "ISO8601" }
-
-GET    /api/services/status
-Response: {
-  "user-service": { "status": "up", "latency": 12 },
-  "video-service": { "status": "up", "latency": 8 },
-  "job-service": { "status": "up", "latency": 5 }
+{
+  "username": "user",
+  "password": "password"
 }
 
-GET    /metrics
-Response: Prometheus metrics (text format)
+Response: Sets HttpOnly cookie with session token
 ```
 
-#### Proxied Service Routes
-All routes prefixed with `/api/auth/`, `/api/videos/`, `/api/jobs/` are proxied to respective services.
+**Get User Info**
+```http
+GET /api/auth/user
+Cookie: token=<session-token>
 
-### WebSocket Events (Port 8060)
+Response: { id, username, email, tier, created_at }
+```
 
-#### Client → Server
+**Logout**
+```http
+POST /api/auth/logout
+Cookie: token=<session-token>
+
+Response: Clears session cookie
+```
+
+### Video Operations
+
+**Upload Video**
+```http
+POST /api/videos/upload
+Cookie: token=<session-token>
+filename: video.mp4
+Content-Type: application/octet-stream
+Body: <binary video data>
+
+Response: {
+  status: "success",
+  videoId: "abc123",
+  name: "video",
+  dimensions: { width: 1920, height: 1080 }
+}
+```
+
+**List Videos**
+```http
+GET /api/videos
+Cookie: token=<session-token>
+
+Response: Array of video objects with metadata
+```
+
+**Resize Video**
+```http
+POST /api/videos/resize
+Cookie: token=<session-token>
+Content-Type: application/json
+
+{
+  "videoId": "abc123",
+  "width": 1280,
+  "height": 720
+}
+
+Response: { status: "success", message: "Video resize job queued!" }
+```
+
+**Convert Video Format**
+```http
+POST /api/videos/convert
+Cookie: token=<session-token>
+Content-Type: application/json
+
+{
+  "videoId": "abc123",
+  "targetFormat": "webm"
+}
+
+Supported formats: mp4, mov, avi, webm, mkv, flv
+```
+
+**Extract Audio**
+```http
+POST /api/videos/extract-audio
+Cookie: token=<session-token>
+Content-Type: application/json
+
+{
+  "videoId": "abc123"
+}
+```
+
+**Get Video Asset**
+```http
+GET /api/videos/asset?videoId=abc123&type=thumbnail
+GET /api/videos/asset?videoId=abc123&type=audio
+GET /api/videos/asset?videoId=abc123&type=original
+GET /api/videos/asset?videoId=abc123&type=resize&dimensions=1280x720
+GET /api/videos/asset?videoId=abc123&type=converted&format=webm
+
+Cookie: token=<session-token>
+
+Response: Binary stream with appropriate Content-Type
+```
+
+### Image Operations
+
+**Upload Image**
+```http
+POST /api/images/upload
+Cookie: token=<session-token>
+filename: image.jpg
+Content-Type: application/octet-stream
+Body: <binary image data>
+
+Supported: jpg, jpeg, png, gif, webp
+```
+
+**Crop Image**
+```http
+POST /api/images/crop
+Cookie: token=<session-token>
+Content-Type: application/json
+
+{
+  "imageId": "def456",
+  "width": 800,
+  "height": 600,
+  "x": 100,
+  "y": 50
+}
+```
+
+**Resize Image**
+```http
+POST /api/images/resize
+Cookie: token=<session-token>
+Content-Type: application/json
+
+{
+  "imageId": "def456",
+  "width": 1024,
+  "height": 768
+}
+```
+
+**Convert Image Format**
+```http
+POST /api/images/convert
+Cookie: token=<session-token>
+Content-Type: application/json
+
+{
+  "imageId": "def456",
+  "targetFormat": "webp"
+}
+
+Supported: jpg, jpeg, png, gif, webp
+```
+
+**Get Image Asset**
+```http
+GET /api/images/asset?imageId=def456&type=original
+GET /api/images/asset?imageId=def456&type=cropped&dimensions=800x600x100x50
+GET /api/images/asset?imageId=def456&type=resized&dimensions=1024x768
+GET /api/images/asset?imageId=def456&type=converted&format=webp
+
+Cookie: token=<session-token>
+```
+
+---
+
+## 🔌 WebSocket Events
+
+### Client → Server
 ```javascript
-socket.emit('subscribe-video', videoId);
-socket.emit('unsubscribe-video', videoId);
+const socket = io('http://localhost:3000');
+
+// Subscribe to video/image updates
+socket.emit('subscribe', 'abc123');
+
+// Unsubscribe
+socket.emit('unsubscribe', 'abc123');
 ```
 
-#### Server → Client
+### Server → Client
 ```javascript
 socket.on('job:queued', (data) => {
-  // { jobId, type, videoId, queuePosition, queuedAt }
+  // { jobId, type, videoId/imageId, timestamp }
 });
 
 socket.on('job:started', (data) => {
-  // { jobId, type, videoId, startedAt, queuedAt }
+  // { jobId, type, videoId/imageId, timestamp }
 });
 
 socket.on('job:progress', (data) => {
-  // { jobId, type, videoId, progress: 0-100 }
+  // { jobId, progress: 0-100 }
 });
 
 socket.on('job:completed', (data) => {
-  // { jobId, videoId, result, duration, completedAt }
+  // { jobId, videoId/imageId, result, duration }
 });
 
 socket.on('job:failed', (data) => {
-  // { jobId, videoId, error, currentAttempt, maxRetries }
-});
-
-socket.on('job:permanent-failure', (data) => {
-  // { jobId, videoId, totalAttempts, error }
+  // { jobId, videoId/imageId, error, stack }
 });
 ```
 
 ---
 
-## Technology Stack
+## 🐳 Docker Commands
 
-### Backend
-- **Runtime**: Node.js
-- **Framework**: Express.js 4.18.2
-- **Database**: PostgreSQL 12+ with pg 8.16.3 (connection pooling)
-- **Queue**: Bull 4.16.5 (Redis-backed, 5 concurrent workers)
-- **WebSocket**: Socket.IO 4.8.1
-- **Authentication**: bcrypt 6.0.0 (10 salt rounds)
-- **Video Processing**: FFmpeg (cpeak wrapper)
-
-### Microservices
-- **Message Broker**: RabbitMQ 3 (AMQP, topic exchange)
-- **Event Bus**: amqplib with correlation IDs
-- **API Gateway**: http-proxy-middleware
-- **Rate Limiting**: express-rate-limit (100 req/15min)
-
-### Frontend
-- **Framework**: React 18.2.0
-- **Router**: react-router-dom 6.3.0
-- **HTTP Client**: axios 0.27.2
-- **Build**: Webpack 5.73.0 + Babel 7.18.9
-
-### Observability (Microservices)
-- **Metrics**: Prometheus 2.x
-- **Dashboards**: Grafana 9.x
-- **Tracing**: Jaeger 1.x
-- **Logs**: Loki 2.x
-- **Queue Monitoring**: Bull Board 6.14.2
-
----
-
-## Database Schema
-
-### Tables
-
-#### users
-```sql
-id              SERIAL PRIMARY KEY
-username        VARCHAR(100) UNIQUE NOT NULL
-email           VARCHAR(255) UNIQUE NOT NULL
-password_hash   VARCHAR(255) NOT NULL
-tier            VARCHAR(20) DEFAULT 'free'
-created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-```
-
-#### sessions
-```sql
-id          SERIAL PRIMARY KEY
-user_id     INTEGER REFERENCES users(id) ON DELETE CASCADE
-token       VARCHAR(255) UNIQUE NOT NULL
-created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-expires_at  TIMESTAMP NOT NULL
-```
-
-#### videos
-```sql
-id          SERIAL PRIMARY KEY
-video_id    VARCHAR(50) UNIQUE NOT NULL
-user_id     INTEGER REFERENCES users(id) ON DELETE CASCADE
-name        VARCHAR(255) NOT NULL
-extension   VARCHAR(10) CHECK (extension IN ('mp4','mov','avi','webm','mkv','flv'))
-dimensions  JSONB                -- { "width": 1920, "height": 1080 }
-metadata    JSONB DEFAULT '{}'   -- { "extractedAudio": false }
-created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-```
-
-#### video_operations
-```sql
-id              SERIAL PRIMARY KEY
-video_id        VARCHAR(50) REFERENCES videos(video_id) ON DELETE CASCADE
-operation_type  VARCHAR(20) NOT NULL  -- 'resize', 'convert', 'extract_audio'
-status          VARCHAR(20) DEFAULT 'pending'  -- 'pending', 'processing', 'completed', 'failed'
-parameters      JSONB NOT NULL        -- { "width": 1920, "height": 1080 } or { "targetFormat": "webm" }
-result_path     TEXT
-error_message   TEXT
-created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-```
-
-#### job_history
-```sql
-id              SERIAL PRIMARY KEY
-job_id          VARCHAR(100) UNIQUE
-video_id        VARCHAR(50)
-user_id         INTEGER REFERENCES users(id) ON DELETE SET NULL
-type            VARCHAR(50)    -- 'resize', 'convert'
-status          VARCHAR(20)    -- 'completed', 'failed'
-priority        VARCHAR(20)    -- 'high', 'normal', 'low'
-progress        INTEGER        -- 0-100
-queued_at       TIMESTAMP
-started_at      TIMESTAMP
-completed_at    TIMESTAMP
-duration_ms     INTEGER
-error_message   TEXT
-created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-```
-
-### Indexes
-```sql
-CREATE INDEX idx_videos_user_id ON videos(user_id);
-CREATE INDEX idx_videos_video_id ON videos(video_id);
-CREATE INDEX idx_operations_video_id ON video_operations(video_id);
-CREATE INDEX idx_operations_status ON video_operations(status);
-CREATE INDEX idx_sessions_token ON sessions(token);
-CREATE INDEX idx_sessions_user_id ON sessions(user_id);
-```
-
----
-
-## Deployment
-
-### Monolith Production Deployment
-
-#### Using PM2 (Cluster Mode)
 ```bash
-# Install PM2
-npm install -g pm2
-
-# Start application
-pm2 start src/cluster.js --name video-editor -i max
-
-# Monitor
-pm2 monit
-
-# Logs
-pm2 logs video-editor
-
-# Restart
-pm2 restart video-editor
-
-# Auto-restart on server reboot
-pm2 startup
-pm2 save
-```
-
-#### Environment Variables
-Create `.env` file:
-```bash
-NODE_ENV=production
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=video_editor
-DB_USER=postgres
-DB_PASSWORD=your_secure_password
-REDIS_HOST=localhost
-REDIS_PORT=6379
-```
-
-### Microservices Docker Deployment
-
-#### Production Docker Compose
-```bash
-cd services
-
 # Build images
 docker-compose build
 
-# Start all services
+# Start services
 docker-compose up -d
 
-# Scale services
-docker-compose up -d --scale video-service=3 --scale job-service=2
+# Scale workers
+docker-compose up -d --scale worker=5
 
-# View logs
+# View logs (all services)
 docker-compose logs -f
 
-# Restart specific service
-docker-compose restart video-service
+# View logs (specific service)
+docker-compose logs -f api
+docker-compose logs -f worker
 
-# Stop all
+# Restart services
+docker-compose restart
+
+# Stop services
 docker-compose down
-```
 
-#### Health Checks
-```bash
-# Gateway health
+# Stop and remove volumes
+docker-compose down -v
+
+# Check service health
 curl http://localhost:3000/health
-
-# All services status
-curl http://localhost:3000/api/services/status
-
-# RabbitMQ
-curl -u admin:admin123 http://localhost:15672/api/healthchecks/node
-
-# Prometheus targets
-curl http://localhost:9090/api/v1/targets
 ```
 
 ---
 
-## Monitoring & Observability
+## 📦 NPM Scripts
 
-### Bull Board (Monolith)
-**URL**: http://localhost:8060/admin/queues
+```bash
+# Production
+npm start        # Start API service
+npm run worker   # Start Worker service
 
-**Features**:
-- Real-time queue statistics (waiting, active, completed, failed)
-- Job inspection (data, progress, logs, error stack traces)
-- Manual job retry/removal
-- Queue pause/resume
-- Clean old jobs (bulk operations)
+# Development (hot-reload)
+npm run dev:api     # Start API with nodemon
+npm run dev:worker  # Start Worker with nodemon
+npm run dev         # Start both API and Worker
 
-### Grafana Dashboards (Microservices)
-**URL**: http://localhost:3100
-**Credentials**: admin/admin
-
-**Pre-configured Dashboards**:
-1. **Microservices Overview**
-   - Service health indicators (up/down status)
-   - Request rate (requests/sec per service)
-   - p95 response times
-   - Error rate percentages (4xx, 5xx)
-
-2. **Queue Monitoring**
-   - Bull queue depth (waiting, active jobs)
-   - Job completion rate (jobs/min)
-   - Failed job count (last 24h)
-   - Average job duration
-
-3. **Database Metrics**
-   - Active connections / Pool utilization
-   - Query duration (p50, p95, p99)
-   - Connection errors
-
-4. **Error Tracking**
-   - 5xx errors by service
-   - Log correlation with traces
-
-### Prometheus Metrics
-**URL**: http://localhost:9090
-
-**Key Metrics**:
-```promql
-# HTTP Requests
-http_requests_total{service="video-service", method="POST", path="/upload"}
-
-# Request Duration
-http_request_duration_seconds{service="api-gateway", quantile="0.95"}
-
-# Queue Depth
-bull_queue_waiting{queue_name="video-processing"}
-
-# Database Connections
-db_connections_active
+# Docker
+npm run docker:build    # Build Docker images
+npm run docker:up       # Start Docker services
+npm run docker:down     # Stop Docker services
+npm run docker:logs     # View all logs
+npm run docker:logs:api # View API logs only
+npm run docker:logs:worker # View Worker logs only
+npm run docker:restart  # Restart all services
+npm run docker:clean    # Stop and remove volumes
 ```
-
-### Jaeger Distributed Tracing
-**URL**: http://localhost:16686
-
-**Features**:
-- End-to-end request tracing across services
-- Service dependency graph
-- Latency analysis (identify bottlenecks)
-- Error correlation
-
-### Alerts
-**Configuration**: `services/observability/prometheus/alerts.yml`
-
-**Alert Rules**:
-- **Critical**: ServiceDown (>1min), HighErrorRate (>5% for 5min)
-- **Warning**: HighResponseTime (>1s), HighCPUUsage (>80%), QueueBacklog (>100 jobs)
 
 ---
 
-## Project Structure
+## ⚙️ Configuration
+
+Configuration is managed through environment variables. Copy `.env.example` to `.env` and customize:
+
+```bash
+# Environment
+NODE_ENV=development
+
+# API Service
+API_PORT=3000
+CORS_ORIGIN=*
+
+# Database
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=video_editor
+DB_USER=postgres
+DB_PASSWORD=postgres
+DB_POOL_SIZE=20
+
+# Redis
+REDIS_HOST=localhost
+REDIS_PORT=6379
+
+# Queue
+QUEUE_CONCURRENCY=5
+
+# Storage
+STORAGE_PATH=./storage
+```
+
+---
+
+## 🗄️ Database Schema
+
+### Tables
+
+- **users**: User accounts (id, username, email, password_hash, tier, created_at)
+- **sessions**: Session tokens (id, user_id, token, created_at, expires_at)
+- **videos**: Video/image metadata (id, video_id, user_id, name, extension, dimensions, metadata)
+- **video_operations**: Processing operations (id, video_id, operation_type, status, parameters, result_path, error_message)
+- **job_history**: Job execution history (id, job_id, video_id, user_id, type, status, queued_at, completed_at, duration_ms)
+
+### Indexes
+
+- `idx_videos_user_id` on videos(user_id)
+- `idx_videos_video_id` on videos(video_id)
+- `idx_operations_video_id` on video_operations(video_id)
+- `idx_operations_status` on video_operations(status)
+- `idx_sessions_token` on sessions(token)
+- `idx_sessions_user_id` on sessions(user_id)
+
+---
+
+## 🛠️ Technology Stack
+
+- **Runtime**: Node.js 18+
+- **Framework**: Express.js 4.18
+- **Database**: PostgreSQL 15 with pg driver (connection pooling)
+- **Queue**: Bull 4.16 (Redis-backed, configurable concurrency)
+- **WebSocket**: Socket.IO 4.8
+- **Authentication**: bcrypt 6.0 (10 salt rounds)
+- **Video Processing**: FFmpeg via cpeak wrapper
+- **Containerization**: Docker + Docker Compose
+
+---
+
+## 📁 Project Structure
 
 ```
-video-editor-express/
-├── src/                          # Monolith application
+video-editor-backend/
+├── api-service/               # API Service (HTTP)
 │   ├── controllers/
-│   │   ├── user.js              # Authentication, profile management
-│   │   └── video.js             # Upload, resize, convert, extract audio
+│   │   ├── authController.js    # Login, logout, user management
+│   │   ├── videoController.js   # Video operations
+│   │   └── imageController.js   # Image operations
+│   ├── routes/
+│   │   ├── authRoutes.js
+│   │   ├── videoRoutes.js
+│   │   └── imageRoutes.js
 │   ├── middleware/
-│   │   └── index.js             # Auth middleware, error handling
-│   ├── index.js                 # Main server (Port 8060)
-│   ├── cluster.js               # Cluster mode with retry logic
-│   ├── router.js                # API route definitions
-│   └── bullBoard.js             # Queue dashboard setup
+│   │   ├── auth.js             # Token validation
+│   │   └── errorHandler.js     # Centralized error handling
+│   ├── websocket/
+│   │   └── socketHandler.js    # Socket.IO real-time updates
+│   └── server.js               # Entry point
 │
-├── services/                     # Microservices architecture
-│   ├── api-gateway/             # Entry point (Port 3000)
-│   │   ├── gateway.js           # Proxy routing, rate limiting
-│   │   └── healthChecks.js      # Service status checks
-│   ├── user-service/            # Authentication (Port 3001)
-│   │   └── server.js            # User CRUD, session management
-│   ├── video-service/           # Video management (Port 3002)
-│   │   └── server.js            # Upload, metadata, operations
-│   ├── job-service/             # Background processing (Port 3003)
-│   │   ├── server.js            # Job API
-│   │   └── queue/BullQueue.js   # Bull queue wrapper
-│   ├── shared/                  # Shared libraries
-│   │   ├── database/            # PostgreSQL connection pool
-│   │   ├── eventBus/            # RabbitMQ event bus (272 lines)
-│   │   └── middleware/          # Prometheus metrics middleware
-│   ├── observability/           # Monitoring stack configs
-│   │   ├── prometheus/          # Metrics collection
-│   │   ├── grafana/             # Dashboards
-│   │   ├── jaeger/              # Distributed tracing
-│   │   └── loki/                # Log aggregation
-│   ├── docker-compose.yml       # Full stack deployment
-│   ├── start-all.sh             # Local startup script
-│   └── stop-all.sh              # Shutdown script
+├── worker-service/            # Worker Service (Background)
+│   ├── queue/
+│   │   └── BullQueue.js       # Job processors (5 types)
+│   └── worker.js              # Entry point
 │
-├── lib/                          # Core libraries
-│   ├── BullQueue.js             # Redis job queue (5 workers, progress tracking)
-│   ├── FF.js                    # FFmpeg wrapper (resize, convert, extract)
-│   └── util.js                  # File utilities, MIME detection
+├── shared/                    # Shared modules
+│   ├── database/
+│   │   ├── db.js              # PostgreSQL pool
+│   │   └── services/          # Data access layer
+│   ├── lib/
+│   │   ├── FF.js              # FFmpeg wrapper
+│   │   └── util.js            # Utilities
+│   └── config/
+│       └── index.js           # Configuration
 │
-├── database/                     # PostgreSQL setup
-│   ├── schema.sql               # Schema (5 tables, indexes, triggers)
-│   ├── db.js                    # Connection pool (max 20)
-│   ├── services/                # Data access layer
-│   │   ├── userService.js       # User CRUD, authentication
-│   │   ├── sessionService.js    # Session lifecycle
-│   │   ├── videoService.js      # Video CRUD, operations
-│   │   └── jobHistoryService.js # Job analytics
-│   └── migrate-from-files.js    # Legacy data migration
+├── database/
+│   ├── schema.sql             # Database schema
+│   └── services/              # Database services
 │
-├── video-editor-client/          # React frontend
-│   ├── src/
-│   │   ├── components/          # Login, Videos, Uploader, Modals
-│   │   ├── hooks/               # useVideo (API calls, state)
-│   │   ├── reusable/            # Button, Modal, Loading
-│   │   └── index.js             # App entry, routing
-│   ├── webpack.config.js        # Build configuration
-│   └── package.json
+├── storage/                   # File storage (gitignored)
 │
-├── public/                       # Static files (served by Express)
-│   ├── index.html               # SPA entry point
-│   ├── scripts.js               # Bundled React app
-│   ├── styles.css               # Global styles
-│   └── websocket-demo.html      # WebSocket demo page
-│
-├── storage/                      # Video file storage (git-ignored)
-│   └── {videoId}/
-│       ├── original.{ext}       # Uploaded video
-│       ├── thumbnail.jpg        # Auto-generated thumbnail
-│       ├── audio.aac            # Extracted audio
-│       ├── {width}x{height}.{ext}  # Resized videos
-│       └── converted.{format}   # Format conversions
-│
-├── data/                         # Legacy file storage (deprecated)
-├── package.json                  # Backend dependencies
-└── README.md
+├── docker-compose.yml         # Docker orchestration
+├── Dockerfile                 # Multi-stage build
+├── package.json               # Dependencies & scripts
+└── .env.example               # Environment template
 ```
 
 ---
 
-## Advanced Features
+## 🔍 Troubleshooting
 
-### Event-Driven Architecture (Microservices)
-
-**Event Bus**: `services/shared/eventBus/EventBus.js` (272 lines)
-
-**Event Types**:
-```javascript
-// User Events
-'user.registered', 'user.logged_in', 'user.logged_out', 'user.updated', 'user.deleted'
-
-// Video Events
-'video.uploaded', 'video.updated', 'video.deleted',
-'video.processing.requested', 'video.processed', 'video.processing.failed'
-
-// Job Events
-'job.created', 'job.started', 'job.progress', 'job.completed', 'job.failed'
-```
-
-**Features**:
-- Correlation IDs for distributed tracing
-- Dead letter queues for failed messages
-- Automatic retries (max 3 attempts with exponential backoff)
-- Message persistence (RabbitMQ durability)
-
-**Event Flow Example** (Video Resize):
-```
-1. Client → Video Service: POST /api/videos/resize
-2. Video Service → DB: Create operation (status: pending)
-3. Video Service → RabbitMQ: Publish VIDEO_PROCESSING_REQUESTED
-4. RabbitMQ → Job Service: Route to job-service queue
-5. Job Service → Bull Queue: Enqueue resize job
-6. Bull Worker: Process FFmpeg resize
-7. Job Service → RabbitMQ: Publish JOB_COMPLETED
-8. Video Service ← RabbitMQ: Receive event
-9. Video Service → DB: Update operation (status: completed)
-10. Video Service → WebSocket: Broadcast to client
-```
-
-### Bull Queue Configuration
-
-**File**: `lib/BullQueue.js`
-
-**Settings**:
-- **Concurrency**: 5 jobs in parallel
-- **Redis**: localhost:6379 (configurable)
-- **Job Retention**: 100 completed, 200 failed
-- **Priority Levels**: High (1), Normal (5), Low (10)
-- **Progress Milestones**: 10%, 25%, 75%, 100%
-
-**Lifecycle**:
-```
-Enqueue → Waiting → Active → Processing → Completed/Failed
-   ↓         ↓         ↓          ↓            ↓
-  Redis   Bull     Worker    Progress      Event
-          Queue    Pool      Updates      Emission
-```
-
-**Recovery on Restart**:
-```javascript
-// Restores incomplete jobs from database
-await videoService.getPendingOperations(100);
-// Re-enqueues pending resize/convert operations
-```
-
-### Retry Logic
-
-**File**: `src/cluster.js` (lines 85-142)
-
-**Configuration**:
-- **Max Retries**: 3
-- **Backoff Strategy**: Exponential (2s, 4s, 8s)
-- **Tracking**: In-memory Map (jobId → attempt count)
-- **Cleanup**: Auto-remove on success or permanent failure
-
-**Flow**:
-```
-Job Fails
-   ↓
-Check Attempt Count
-   ↓
-< 3 Attempts?
-   ├─ Yes → Wait (2^attempt * 2s) → Re-enqueue
-   └─ No  → Emit 'job:permanent-failure' → Cleanup
-```
-
-### WebSocket Real-Time Updates
-
-**File**: `src/index.js` (lines 16-94)
-
-**Architecture**:
-```
-Primary Process (Bull Queue)
-    ↓ IPC Messages
-Worker Processes (cluster.workers)
-    ↓ Socket.IO Broadcast
-Clients (Browser WebSocket)
-```
-
-**Event Data**:
-```javascript
-// job:queued
-{ jobId, type, videoId, queuePosition, queuedAt }
-
-// job:progress
-{ jobId, type, videoId, progress: 0-100 }
-
-// job:completed
-{ jobId, videoId, result, duration, queuedAt, startedAt, completedAt }
-
-// job:failed
-{ jobId, videoId, error, stack, currentAttempt, maxRetries }
-```
-
-### FFmpeg Operations
-
-**File**: `lib/FF.js`
-
-**Functions**:
-1. **resize(input, output, width, height)**
-   - Filter: `scale=${width}:${height}`
-   - Codec: Copy (no re-encoding)
-
-2. **convertFormat(input, output, format)**
-   - MP4/MOV: libx264 + aac
-   - AVI: mpeg4 + libmp3lame
-   - WebM: libvpx-vp9 + libopus
-   - MKV: libx264 + aac
-
-3. **extractAudio(input, output)**
-   - Method: `-vn -c:a copy` (stream copy)
-   - Format: AAC
-
-4. **makeThumbnail(input, output)**
-   - Frame: 5 seconds
-   - Size: 320x180
-   - Format: JPEG
-
-5. **getDimensions(input)**
-   - Uses: ffprobe
-   - Returns: `{ width, height }`
-
----
-
-## Environment Configuration
-
-### Monolith (.env)
-```bash
-NODE_ENV=production
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=video_editor
-DB_USER=postgres
-DB_PASSWORD=your_password
-REDIS_HOST=localhost
-REDIS_PORT=6379
-```
-
-### Microservices
-
-**API Gateway** (`services/api-gateway/.env`):
-```bash
-GATEWAY_PORT=3000
-USER_SERVICE_URL=http://localhost:3001
-VIDEO_SERVICE_URL=http://localhost:3002
-JOB_SERVICE_URL=http://localhost:3003
-RATE_LIMIT_WINDOW_MS=900000
-RATE_LIMIT_MAX_REQUESTS=100
-NODE_ENV=development
-```
-
-**User Service** (`services/user-service/.env`):
-```bash
-USER_SERVICE_PORT=3001
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=video_editor
-DB_USER=postgres
-DB_PASSWORD=postgres
-RABBITMQ_URL=amqp://admin:admin123@localhost:5672
-NODE_ENV=development
-```
-
-**Video Service** (`services/video-service/.env`):
-```bash
-VIDEO_SERVICE_PORT=3002
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=video_editor
-DB_USER=postgres
-DB_PASSWORD=postgres
-USER_SERVICE_URL=http://localhost:3001
-JOB_SERVICE_URL=http://localhost:3003
-RABBITMQ_URL=amqp://admin:admin123@localhost:5672
-NODE_ENV=development
-```
-
-**Job Service** (`services/job-service/.env`):
-```bash
-JOB_SERVICE_PORT=3003
-REDIS_HOST=localhost
-REDIS_PORT=6379
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=video_editor
-DB_USER=postgres
-DB_PASSWORD=postgres
-RABBITMQ_URL=amqp://admin:admin123@localhost:5672
-NODE_ENV=development
-```
-
----
-
-## Troubleshooting
-
-### Common Issues
-
-**Issue**: Database connection error
+### Database Connection Error
 ```bash
 # Check PostgreSQL is running
 pg_isready -h localhost -p 5432
@@ -965,17 +537,17 @@ psql -l | grep video_editor
 psql video_editor -c "SELECT NOW();"
 ```
 
-**Issue**: Redis connection error
+### Redis Connection Error
 ```bash
 # Check Redis is running
 redis-cli ping
 # Expected: PONG
 
 # Start Redis
-redis-server --daemonize yes
+redis-server
 ```
 
-**Issue**: FFmpeg not found
+### FFmpeg Not Found
 ```bash
 # Check installation
 ffmpeg -version
@@ -988,120 +560,80 @@ sudo apt update && sudo apt install ffmpeg
 brew install ffmpeg
 ```
 
-**Issue**: Bull queue jobs stuck
+### Port Already in Use
 ```bash
-# Access Bull Board
-# Navigate to http://localhost:8060/admin/queues
-# Check "Active" tab for hung jobs
-# Manually retry or remove stuck jobs
-```
-
-**Issue**: Port already in use
-```bash
-# Find process using port 8060
-lsof -i :8060
+# Find process using port 3000
+lsof -i :3000
 
 # Kill process
 kill -9 <PID>
-
-# Or change port in src/index.js
 ```
 
----
-
-## Performance Tuning
-
-### Database Optimization
-```sql
--- Add indexes for frequent queries
-CREATE INDEX idx_videos_created_at ON videos(created_at DESC);
-CREATE INDEX idx_operations_status_created ON video_operations(status, created_at);
-
--- Analyze query performance
-EXPLAIN ANALYZE SELECT * FROM videos WHERE user_id = 1;
-
--- Vacuum and analyze
-VACUUM ANALYZE videos;
-```
-
-### Redis Optimization
+### Worker Not Processing Jobs
 ```bash
-# Increase max memory
-redis-cli CONFIG SET maxmemory 2gb
-redis-cli CONFIG SET maxmemory-policy allkeys-lru
+# Check worker logs
+docker-compose logs worker
 
-# Persistence
-redis-cli CONFIG SET save "900 1 300 10 60 10000"
-```
+# Check Redis queue
+redis-cli
+> KEYS *
 
-### Bull Queue Tuning
-Edit `lib/BullQueue.js`:
-```javascript
-// Increase concurrency
-this.CONCURRENCY = 10; // Default: 5
-
-// Adjust job retention
-removeOnComplete: 50,  // Default: 100
-removeOnFail: 100      // Default: 200
-```
-
-### Cluster Mode Workers
-Edit `src/cluster.js`:
-```javascript
-// Manual worker count (default: CPU cores)
-const workerCount = 4;
-for (let i = 0; i < workerCount; i++) {
-  cluster.fork();
-}
+# Restart worker
+docker-compose restart worker
 ```
 
 ---
 
-## Contributing
+## 📊 Performance Tuning
 
-### Development Workflow
-1. Fork repository
-2. Create feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit changes (`git commit -m 'Add amazing feature'`)
-4. Push to branch (`git push origin feature/amazing-feature`)
-5. Open Pull Request
+### Database
+- Connection pool size: Default 20 (adjust via `DB_POOL_SIZE`)
+- Slow query logging: >1000ms queries logged automatically
 
-### Code Style
-- ESLint configuration (future)
-- Prettier formatting (future)
-- Follow existing patterns in codebase
+### Redis
+- Job retention: 100 completed, 200 failed (configurable in `shared/config`)
 
----
+### Worker Concurrency
+- Default: 5 concurrent jobs
+- Adjust via `QUEUE_CONCURRENCY` environment variable
+- Scale workers: `docker-compose up -d --scale worker=10`
 
-## Documentation
-
-### Additional Guides
-- [Bull Redis Queue Guide](BULL_REDIS_GUIDE.md) - Detailed queue setup
-- [Advanced Features](ADVANCED_FEATURES.md) - Format conversion, retry logic
-- [Event-Driven Architecture](EVENT_DRIVEN_GUIDE.md) - Microservices event bus
-
-### API Testing
-Postman collection available: `postman_collection.json` (if exists)
+### File Streaming
+- Chunk size: 64KB (optimized for network transfer)
+- Caching: Thumbnails cached with ETag + 24h TTL
 
 ---
 
-## License
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+---
+
+## 📄 License
 
 ISC
 
 ---
 
-## Author
+## 👤 Author
 
 **Ignatius Sani**
 
 ---
 
-## Acknowledgments
+## 🙏 Acknowledgments
 
-- **FFmpeg** - Video processing engine
-- **Bull** - Robust queue system
+- **FFmpeg** - Video/image processing engine
+- **Bull** - Robust job queue system
 - **PostgreSQL** - Reliable database
 - **Socket.IO** - Real-time communication
-- **RabbitMQ** - Event-driven messaging
-- **Prometheus/Grafana** - Observability stack
+- **Redis** - In-memory data store
+
+---
+
+**Built with ❤️ using Node.js**
