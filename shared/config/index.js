@@ -6,7 +6,7 @@
 module.exports = {
   api: {
     port: process.env.API_PORT || 3000,
-    corsOrigin: process.env.CORS_ORIGIN || '*',
+    corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:3001',
     env: process.env.NODE_ENV || 'development'
   },
 

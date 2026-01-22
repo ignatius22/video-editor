@@ -21,19 +21,18 @@ const server = http.createServer(app);
 const io = socketIO(server, {
   cors: {
     origin: config.api.corsOrigin,
-    methods: ["GET", "POST"]
+    methods: ["GET", "POST"],
+    credentials: true
   }
 });
 
 // Middleware
-app.use(cors({ origin: config.api.corsOrigin }));
+app.use(cors({ 
+  origin: config.api.corsOrigin,
+  credentials: true
+}));
 app.use(express.json());
 app.use(express.raw({ type: 'application/octet-stream', limit: '500mb' }));
-
-// Serve static files
-if (config.api.env === 'production') {
-  app.use(express.static(path.join(__dirname, '../public')));
-}
 
 // Health check
 app.get('/health', (req, res) => {

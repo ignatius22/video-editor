@@ -18,7 +18,6 @@ COPY database ./database
 FROM base AS api
 COPY api-service ./api-service
 COPY worker-service/queue ./worker-service/queue
-COPY public ./public
 
 EXPOSE 3000
 CMD ["node", "api-service/server.js"]

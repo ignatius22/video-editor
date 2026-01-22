@@ -19,7 +19,7 @@ services:
       - DB_PASSWORD=postgres
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - CORS_ORIGIN=*
+      - CORS_ORIGIN=http://localhost:3001
     volumes:
       - ./storage:/app/storage
     depends_on:
