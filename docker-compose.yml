@@ -20,12 +20,22 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - CORS_ORIGIN=http://localhost:3001
+      # OpenTelemetry Configuration
+      - OTEL_ENABLED=true
+      - OTEL_SERVICE_NAME=video-editor-api
+      - OTEL_SERVICE_VERSION=2.0.0
+      - OTEL_EXPORTER_OTLP_ENDPOINT=host.docker.internal:4317
+      - OTEL_TRACE_SAMPLING_PROBABILITY=1.0
+      - OTEL_FFMPEG_CAPTURE_STDERR=true
+      - OTEL_FFMPEG_MAX_STDERR_LENGTH=2000
     volumes:
       - ./storage:/app/storage
     depends_on:
       - db
       - redis
     restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - video-editor-network
 
@@ -44,6 +54,14 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - QUEUE_CONCURRENCY=5
+      # OpenTelemetry Configuration
+      - OTEL_ENABLED=true
+      - OTEL_SERVICE_NAME=video-editor-worker
+      - OTEL_SERVICE_VERSION=2.0.0
+      - OTEL_EXPORTER_OTLP_ENDPOINT=host.docker.internal:4317
+      - OTEL_TRACE_SAMPLING_PROBABILITY=1.0
+      - OTEL_FFMPEG_CAPTURE_STDERR=true
+      - OTEL_FFMPEG_MAX_STDERR_LENGTH=2000
     volumes:
       - ./storage:/app/storage
     depends_on:
@@ -52,6 +70,8 @@ services:
     deploy:
       replicas: 2  # Run 2 worker instances
     restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - video-editor-network
 

@@ -13,9 +13,14 @@ RUN npm ci --only=production && npm cache clean --force
 # Copy shared code
 COPY shared ./shared
 COPY database ./database
+COPY create-test-user.js ./create-test-user.js
 
 # API Service stage
 FROM base AS api
+
+# Install FFmpeg for synchronous video operations (thumbnail, getDimensions)
+RUN apk add --no-cache ffmpeg
+
 COPY api-service ./api-service
 COPY worker-service/queue ./worker-service/queue
 

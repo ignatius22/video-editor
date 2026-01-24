@@ -1,9 +1,15 @@
 const Bull = require('bull');
 const EventEmitter = require('events');
 const videoService = require('../../shared/database/services/videoService');
-const FF = require('../../shared/lib/FF');
+const FFOriginal = require('../../shared/lib/FF');
 const util = require('../../shared/lib/util');
 const config = require('../../shared/config');
+const telemetry = require('../../shared/telemetry');
+
+// Use instrumented FF module if telemetry is enabled
+const FF = telemetry.config.enabled
+  ? telemetry.createInstrumentedFF(FFOriginal)
+  : FFOriginal;
 
 class BullQueue extends EventEmitter {
   constructor() {
@@ -242,6 +248,9 @@ class BullQueue extends EventEmitter {
   async enqueue(job) {
     const { type, ...data } = job;
 
+    // Inject trace context into job data
+    const instrumentedData = telemetry.injectTraceContext(data);
+
     // Add priority support
     const priority = job.priority || 'normal';
     const priorityValue = {
@@ -250,295 +259,371 @@ class BullQueue extends EventEmitter {
       low: 10
     }[priority];
 
-    // Add job to Bull queue
-    const bullJob = await this.queue.add(type, data, {
-      priority: priorityValue
-    });
+    // Create enqueue span
+    const enqueueSpan = telemetry.createEnqueueSpan(type, data);
 
-    // Emit queued event
-    const queuePosition = await this.queue.count();
-    this.emit('job:queued', {
-      jobId: bullJob.id,
-      type: type,
-      videoId: data.videoId || data.imageId,
-      queuePosition: queuePosition,
-      queuedAt: new Date(bullJob.timestamp).toISOString(),
-      priority: priority
-    });
+    return await enqueueSpan.run(async () => {
+      // Add job to Bull queue
+      const bullJob = await this.queue.add(type, instrumentedData, {
+        priority: priorityValue
+      });
 
-    return bullJob.id;
+      // Emit queued event
+      const queuePosition = await this.queue.count();
+      this.emit('job:queued', {
+        jobId: bullJob.id,
+        type: type,
+        videoId: data.videoId || data.imageId,
+        queuePosition: queuePosition,
+        queuedAt: new Date(bullJob.timestamp).toISOString(),
+        priority: priority
+      });
+
+      return bullJob.id;
+    });
   }
 
   async processResize(bullJob) {
-    const { videoId, width, height } = bullJob.data;
+    return telemetry.extractTraceContextAndStartSpan(
+      bullJob,
+      'queue.process.resize',
+      async (context, span) => {
+        const { videoId, width, height } = bullJob.data;
 
-    const video = await videoService.findByVideoId(videoId);
+        const video = await videoService.findByVideoId(videoId);
 
-    if (!video) {
-      throw new Error(`Video ${videoId} not found`);
-    }
+        if (!video) {
+          throw new Error(`Video ${videoId} not found`);
+        }
 
-    const originalVideoPath = `${config.storage.path}/${video.video_id}/original.${video.extension}`;
-    const targetVideoPath = `${config.storage.path}/${video.video_id}/${width}x${height}.${video.extension}`;
+        const originalVideoPath = `${config.storage.path}/${video.video_id}/original.${video.extension}`;
+        const targetVideoPath = `${config.storage.path}/${video.video_id}/${width}x${height}.${video.extension}`;
 
-    // Find the operation
-    const operation = await videoService.findOperation(videoId, 'resize', { width, height });
+        // Find the operation
+        const operation = await videoService.findOperation(videoId, 'resize', { width, height });
 
-    try {
-      // Update progress: Starting
-      await bullJob.progress(10);
+        try {
+          // Update progress: Starting
+          await bullJob.progress(10);
 
-      // Update operation status to processing
-      if (operation) {
-        await videoService.updateOperationStatus(operation.id, 'processing');
+          // Update operation status to processing
+          if (operation) {
+            await videoService.updateOperationStatus(operation.id, 'processing');
+          }
+
+          // Resize video (FFmpeg operation is now auto-instrumented)
+          await bullJob.progress(25);
+          await FF.resize(originalVideoPath, targetVideoPath, width, height);
+
+          // Update progress: Processing complete
+          await bullJob.progress(75);
+
+          // Update operation status to completed
+          if (operation) {
+            await videoService.updateOperationStatus(operation.id, 'completed', targetVideoPath);
+          }
+
+          // Complete
+          await bullJob.progress(100);
+
+          console.log(`Done resizing ${videoId} to ${width}x${height}`);
+
+          // Add result attributes to span
+          if (span) {
+            span.setAttributes({
+              'job.result.output_path': targetVideoPath,
+              'job.result.dimensions': `${width}x${height}`,
+            });
+          }
+
+          return JSON.stringify({ width, height, outputPath: targetVideoPath });
+        } catch (error) {
+          // Update operation status to failed
+          if (operation) {
+            await videoService.updateOperationStatus(operation.id, 'failed', null, error.message);
+          }
+
+          util.deleteFile(targetVideoPath);
+          throw error;
+        }
       }
-
-      // Resize video
-      await bullJob.progress(25);
-      await FF.resize(originalVideoPath, targetVideoPath, width, height);
-
-      // Update progress: Processing complete
-      await bullJob.progress(75);
-
-      // Update operation status to completed
-      if (operation) {
-        await videoService.updateOperationStatus(operation.id, 'completed', targetVideoPath);
-      }
-
-      // Complete
-      await bullJob.progress(100);
-
-      console.log(`Done resizing ${videoId} to ${width}x${height}`);
-
-      return JSON.stringify({ width, height, outputPath: targetVideoPath });
-    } catch (error) {
-      // Update operation status to failed
-      if (operation) {
-        await videoService.updateOperationStatus(operation.id, 'failed', null, error.message);
-      }
-
-      util.deleteFile(targetVideoPath);
-      throw error;
-    }
+    );
   }
 
   async processConvert(bullJob) {
-    const { videoId, targetFormat, originalFormat, originalPath, convertedPath } = bullJob.data;
+    return telemetry.extractTraceContextAndStartSpan(
+      bullJob,
+      'queue.process.convert',
+      async (context, span) => {
+        const { videoId, targetFormat, originalFormat, originalPath, convertedPath } = bullJob.data;
 
-    const video = await videoService.findByVideoId(videoId);
-    if (!video) {
-      throw new Error(`Video ${videoId} not found`);
-    }
+        const video = await videoService.findByVideoId(videoId);
+        if (!video) {
+          throw new Error(`Video ${videoId} not found`);
+        }
 
-    // Find the operation
-    const operation = await videoService.findOperation(videoId, 'convert', {
-      targetFormat,
-      originalFormat: originalFormat || video.extension.toLowerCase()
-    });
+        // Find the operation
+        const operation = await videoService.findOperation(videoId, 'convert', {
+          targetFormat,
+          originalFormat: originalFormat || video.extension.toLowerCase()
+        });
 
-    try {
-      // Update progress: Starting
-      await bullJob.progress(10);
+        try {
+          // Update progress: Starting
+          await bullJob.progress(10);
 
-      // Update operation status to processing
-      if (operation) {
-        await videoService.updateOperationStatus(operation.id, 'processing');
+          // Update operation status to processing
+          if (operation) {
+            await videoService.updateOperationStatus(operation.id, 'processing');
+          }
+
+          // Convert format (FFmpeg operation is now auto-instrumented)
+          await bullJob.progress(25);
+          await FF.convertFormat(originalPath, convertedPath, targetFormat);
+
+          // Update progress: Processing complete
+          await bullJob.progress(75);
+
+          // Update operation status to completed
+          if (operation) {
+            await videoService.updateOperationStatus(operation.id, 'completed', convertedPath);
+          }
+
+          // Complete
+          await bullJob.progress(100);
+
+          console.log(`Video converted to ${targetFormat.toUpperCase()}`);
+
+          // Add result attributes to span
+          if (span) {
+            span.setAttributes({
+              'job.result.output_path': convertedPath,
+              'job.result.format': targetFormat,
+            });
+          }
+
+          return JSON.stringify({ targetFormat, outputPath: convertedPath });
+        } catch (error) {
+          console.error(`Video conversion failed:`, error);
+          util.deleteFile(convertedPath);
+
+          // Update operation status to failed
+          if (operation) {
+            await videoService.updateOperationStatus(operation.id, 'failed', null, error.message);
+          }
+
+          throw error;
+        }
       }
-
-      // Convert format
-      await bullJob.progress(25);
-      await FF.convertFormat(originalPath, convertedPath, targetFormat);
-
-      // Update progress: Processing complete
-      await bullJob.progress(75);
-
-      // Update operation status to completed
-      if (operation) {
-        await videoService.updateOperationStatus(operation.id, 'completed', convertedPath);
-      }
-
-      // Complete
-      await bullJob.progress(100);
-
-      console.log(`Video converted to ${targetFormat.toUpperCase()}`);
-
-      return JSON.stringify({ targetFormat, outputPath: convertedPath });
-    } catch (error) {
-      console.error(`Video conversion failed:`, error);
-      util.deleteFile(convertedPath);
-
-      // Update operation status to failed
-      if (operation) {
-        await videoService.updateOperationStatus(operation.id, 'failed', null, error.message);
-      }
-
-      throw error;
-    }
+    );
   }
 
   async processCropImage(bullJob) {
-    const { imageId, width, height, x, y } = bullJob.data;
+    return telemetry.extractTraceContextAndStartSpan(
+      bullJob,
+      'queue.process.crop',
+      async (context, span) => {
+        const { imageId, width, height, x, y } = bullJob.data;
 
-    const image = await videoService.findByVideoId(imageId);
-    if (!image) {
-      throw new Error(`Image ${imageId} not found`);
-    }
+        const image = await videoService.findByVideoId(imageId);
+        if (!image) {
+          throw new Error(`Image ${imageId} not found`);
+        }
 
-    const originalImagePath = `${config.storage.path}/${image.video_id}/original.${image.extension}`;
-    const targetImagePath = `${config.storage.path}/${image.video_id}/cropped_${width}x${height}x${x}x${y}.${image.extension}`;
+        const originalImagePath = `${config.storage.path}/${image.video_id}/original.${image.extension}`;
+        const targetImagePath = `${config.storage.path}/${image.video_id}/cropped_${width}x${height}x${x}x${y}.${image.extension}`;
 
-    // Find the operation
-    const operation = await videoService.findOperation(imageId, 'crop', { width, height, x, y });
+        // Find the operation
+        const operation = await videoService.findOperation(imageId, 'crop', { width, height, x, y });
 
-    try {
-      // Update progress: Starting
-      await bullJob.progress(10);
+        try {
+          // Update progress: Starting
+          await bullJob.progress(10);
 
-      // Update operation status to processing
-      if (operation) {
-        await videoService.updateOperationStatus(operation.id, 'processing');
+          // Update operation status to processing
+          if (operation) {
+            await videoService.updateOperationStatus(operation.id, 'processing');
+          }
+
+          // Crop image (FFmpeg operation is now auto-instrumented)
+          await bullJob.progress(25);
+          await FF.cropImage(originalImagePath, targetImagePath, width, height, x, y);
+
+          // Update progress: Processing complete
+          await bullJob.progress(75);
+
+          // Update operation status to completed
+          if (operation) {
+            await videoService.updateOperationStatus(operation.id, 'completed', targetImagePath);
+          }
+
+          // Complete
+          await bullJob.progress(100);
+
+          console.log(`Image cropped ${imageId} to ${width}x${height} at (${x},${y})`);
+
+          // Add result attributes to span
+          if (span) {
+            span.setAttributes({
+              'job.result.output_path': targetImagePath,
+              'job.result.dimensions': `${width}x${height}`,
+              'job.result.position': `${x},${y}`,
+            });
+          }
+
+          return JSON.stringify({ width, height, x, y, outputPath: targetImagePath });
+        } catch (error) {
+          console.error(`Image crop failed:`, error);
+
+          // Update operation status to failed
+          if (operation) {
+            await videoService.updateOperationStatus(operation.id, 'failed', null, error.message);
+          }
+
+          util.deleteFile(targetImagePath);
+          throw error;
+        }
       }
-
-      // Crop image
-      await bullJob.progress(25);
-      await FF.cropImage(originalImagePath, targetImagePath, width, height, x, y);
-
-      // Update progress: Processing complete
-      await bullJob.progress(75);
-
-      // Update operation status to completed
-      if (operation) {
-        await videoService.updateOperationStatus(operation.id, 'completed', targetImagePath);
-      }
-
-      // Complete
-      await bullJob.progress(100);
-
-      console.log(`Image cropped ${imageId} to ${width}x${height} at (${x},${y})`);
-
-      return JSON.stringify({ width, height, x, y, outputPath: targetImagePath });
-    } catch (error) {
-      console.error(`Image crop failed:`, error);
-
-      // Update operation status to failed
-      if (operation) {
-        await videoService.updateOperationStatus(operation.id, 'failed', null, error.message);
-      }
-
-      util.deleteFile(targetImagePath);
-      throw error;
-    }
+    );
   }
 
   async processResizeImage(bullJob) {
-    const { imageId, width, height } = bullJob.data;
+    return telemetry.extractTraceContextAndStartSpan(
+      bullJob,
+      'queue.process.resize-image',
+      async (context, span) => {
+        const { imageId, width, height } = bullJob.data;
 
-    const image = await videoService.findByVideoId(imageId);
-    if (!image) {
-      throw new Error(`Image ${imageId} not found`);
-    }
+        const image = await videoService.findByVideoId(imageId);
+        if (!image) {
+          throw new Error(`Image ${imageId} not found`);
+        }
 
-    const originalImagePath = `${config.storage.path}/${image.video_id}/original.${image.extension}`;
-    const targetImagePath = `${config.storage.path}/${image.video_id}/resized_${width}x${height}.${image.extension}`;
+        const originalImagePath = `${config.storage.path}/${image.video_id}/original.${image.extension}`;
+        const targetImagePath = `${config.storage.path}/${image.video_id}/resized_${width}x${height}.${image.extension}`;
 
-    // Find the operation
-    const operation = await videoService.findOperation(imageId, 'resize-image', { width, height });
+        // Find the operation
+        const operation = await videoService.findOperation(imageId, 'resize-image', { width, height });
 
-    try {
-      // Update progress: Starting
-      await bullJob.progress(10);
+        try {
+          // Update progress: Starting
+          await bullJob.progress(10);
 
-      // Update operation status to processing
-      if (operation) {
-        await videoService.updateOperationStatus(operation.id, 'processing');
+          // Update operation status to processing
+          if (operation) {
+            await videoService.updateOperationStatus(operation.id, 'processing');
+          }
+
+          // Resize image (FFmpeg operation is now auto-instrumented)
+          await bullJob.progress(25);
+          await FF.resizeImage(originalImagePath, targetImagePath, width, height);
+
+          // Update progress: Processing complete
+          await bullJob.progress(75);
+
+          // Update operation status to completed
+          if (operation) {
+            await videoService.updateOperationStatus(operation.id, 'completed', targetImagePath);
+          }
+
+          // Complete
+          await bullJob.progress(100);
+
+          console.log(`Image resized ${imageId} to ${width}x${height}`);
+
+          // Add result attributes to span
+          if (span) {
+            span.setAttributes({
+              'job.result.output_path': targetImagePath,
+              'job.result.dimensions': `${width}x${height}`,
+            });
+          }
+
+          return JSON.stringify({ width, height, outputPath: targetImagePath });
+        } catch (error) {
+          console.error(`Image resize failed:`, error);
+
+          // Update operation status to failed
+          if (operation) {
+            await videoService.updateOperationStatus(operation.id, 'failed', null, error.message);
+          }
+
+          util.deleteFile(targetImagePath);
+          throw error;
+        }
       }
-
-      // Resize image
-      await bullJob.progress(25);
-      await FF.resizeImage(originalImagePath, targetImagePath, width, height);
-
-      // Update progress: Processing complete
-      await bullJob.progress(75);
-
-      // Update operation status to completed
-      if (operation) {
-        await videoService.updateOperationStatus(operation.id, 'completed', targetImagePath);
-      }
-
-      // Complete
-      await bullJob.progress(100);
-
-      console.log(`Image resized ${imageId} to ${width}x${height}`);
-
-      return JSON.stringify({ width, height, outputPath: targetImagePath });
-    } catch (error) {
-      console.error(`Image resize failed:`, error);
-
-      // Update operation status to failed
-      if (operation) {
-        await videoService.updateOperationStatus(operation.id, 'failed', null, error.message);
-      }
-
-      util.deleteFile(targetImagePath);
-      throw error;
-    }
+    );
   }
 
   async processConvertImage(bullJob) {
-    const { imageId, targetFormat, originalFormat } = bullJob.data;
+    return telemetry.extractTraceContextAndStartSpan(
+      bullJob,
+      'queue.process.convert-image',
+      async (context, span) => {
+        const { imageId, targetFormat, originalFormat } = bullJob.data;
 
-    const image = await videoService.findByVideoId(imageId);
-    if (!image) {
-      throw new Error(`Image ${imageId} not found`);
-    }
+        const image = await videoService.findByVideoId(imageId);
+        if (!image) {
+          throw new Error(`Image ${imageId} not found`);
+        }
 
-    const originalImagePath = `${config.storage.path}/${image.video_id}/original.${image.extension}`;
-    const targetImagePath = `${config.storage.path}/${image.video_id}/converted.${targetFormat}`;
+        const originalImagePath = `${config.storage.path}/${image.video_id}/original.${image.extension}`;
+        const targetImagePath = `${config.storage.path}/${image.video_id}/converted.${targetFormat}`;
 
-    // Find the operation
-    const operation = await videoService.findOperation(imageId, 'convert-image', {
-      targetFormat,
-      originalFormat: originalFormat || image.extension
-    });
+        // Find the operation
+        const operation = await videoService.findOperation(imageId, 'convert-image', {
+          targetFormat,
+          originalFormat: originalFormat || image.extension
+        });
 
-    try {
-      // Update progress: Starting
-      await bullJob.progress(10);
+        try {
+          // Update progress: Starting
+          await bullJob.progress(10);
 
-      // Update operation status to processing
-      if (operation) {
-        await videoService.updateOperationStatus(operation.id, 'processing');
+          // Update operation status to processing
+          if (operation) {
+            await videoService.updateOperationStatus(operation.id, 'processing');
+          }
+
+          // Convert image format (FFmpeg operation is now auto-instrumented)
+          await bullJob.progress(25);
+          await FF.convertImageFormat(originalImagePath, targetImagePath, targetFormat);
+
+          // Update progress: Processing complete
+          await bullJob.progress(75);
+
+          // Update operation status to completed
+          if (operation) {
+            await videoService.updateOperationStatus(operation.id, 'completed', targetImagePath);
+          }
+
+          // Complete
+          await bullJob.progress(100);
+
+          console.log(`Image converted ${imageId} from ${image.extension} to ${targetFormat}`);
+
+          // Add result attributes to span
+          if (span) {
+            span.setAttributes({
+              'job.result.output_path': targetImagePath,
+              'job.result.format': targetFormat,
+            });
+          }
+
+          return JSON.stringify({ targetFormat, outputPath: targetImagePath });
+        } catch (error) {
+          console.error(`Image conversion failed:`, error);
+          util.deleteFile(targetImagePath);
+
+          // Update operation status to failed
+          if (operation) {
+            await videoService.updateOperationStatus(operation.id, 'failed', null, error.message);
+          }
+
+          throw error;
+        }
       }
-
-      // Convert image format
-      await bullJob.progress(25);
-      await FF.convertImageFormat(originalImagePath, targetImagePath, targetFormat);
-
-      // Update progress: Processing complete
-      await bullJob.progress(75);
-
-      // Update operation status to completed
-      if (operation) {
-        await videoService.updateOperationStatus(operation.id, 'completed', targetImagePath);
-      }
-
-      // Complete
-      await bullJob.progress(100);
-
-      console.log(`Image converted ${imageId} from ${image.extension} to ${targetFormat}`);
-
-      return JSON.stringify({ targetFormat, outputPath: targetImagePath });
-    } catch (error) {
-      console.error(`Image conversion failed:`, error);
-      util.deleteFile(targetImagePath);
-
-      // Update operation status to failed
-      if (operation) {
-        await videoService.updateOperationStatus(operation.id, 'failed', null, error.message);
-      }
-
-      throw error;
-    }
+    );
   }
 
   // Helper methods for queue management

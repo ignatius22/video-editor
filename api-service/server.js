@@ -1,3 +1,7 @@
+// CRITICAL: Initialize telemetry FIRST (before any other imports)
+const telemetry = require('../shared/telemetry');
+const sdk = telemetry.initializeTelemetry('video-editor-api');
+
 const express = require('express');
 const http = require('http');
 const socketIO = require('socket.io');
@@ -74,8 +78,14 @@ if (process.env.NODE_ENV !== 'test') {
 // Graceful shutdown
 process.on('SIGTERM', async () => {
   console.log('[API] SIGTERM received, shutting down gracefully...');
-  server.close(() => {
+  server.close(async () => {
     console.log('[API] HTTP server closed');
+
+    // Flush telemetry before closing queue
+    if (sdk) {
+      await telemetry.shutdownTelemetry();
+    }
+
     if (queue) {
       queue.close().then(() => {
         console.log('[API] Queue closed');
@@ -89,8 +99,14 @@ process.on('SIGTERM', async () => {
 
 process.on('SIGINT', async () => {
   console.log('[API] SIGINT received, shutting down gracefully...');
-  server.close(() => {
+  server.close(async () => {
     console.log('[API] HTTP server closed');
+
+    // Flush telemetry before closing queue
+    if (sdk) {
+      await telemetry.shutdownTelemetry();
+    }
+
     if (queue) {
       queue.close().then(() => {
         console.log('[API] Queue closed');

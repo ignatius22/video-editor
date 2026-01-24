@@ -34,5 +34,11 @@ module.exports = {
     concurrency: parseInt(process.env.QUEUE_CONCURRENCY || '5', 10),
     removeOnComplete: 100,
     removeOnFail: 200
+  },
+
+  telemetry: {
+    enabled: process.env.OTEL_ENABLED === 'true',
+    serviceName: process.env.OTEL_SERVICE_NAME,
+    endpoint: process.env.OTEL_EXPORTER_OTLP_ENDPOINT || 'localhost:4317'
   }
 };

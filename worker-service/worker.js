@@ -1,3 +1,7 @@
+// CRITICAL: Initialize telemetry FIRST (before any other imports)
+const telemetry = require('../shared/telemetry');
+const sdk = telemetry.initializeTelemetry('video-editor-worker');
+
 const BullQueue = require('./queue/BullQueue');
 const db = require('../shared/database/db');
 const config = require('../shared/config');
@@ -57,7 +61,12 @@ const shutdown = async () => {
   console.log('\n[Worker] Shutting down gracefully...');
 
   try {
-    // Close queue first
+    // Flush telemetry first
+    if (sdk) {
+      await telemetry.shutdownTelemetry();
+    }
+
+    // Close queue
     await queue.close();
     console.log('[Worker] Queue closed');
 

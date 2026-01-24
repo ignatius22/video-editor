@@ -1,7 +1,7 @@
 const { spawn } = require("node:child_process");
 
 const makeThumbnail = (fullPath, thumbnailPath) => {
-  // ffmpeg -i video.mp4 -ss 5 -vframes 1 thumbnail.jpg
+  // ffmpeg -i video.mp4 -ss 5 -vframes 1 -update 1 thumbnail.jpg
   return new Promise((resolve, reject) => {
     const ffmpeg = spawn("ffmpeg", [
       "-i",
@@ -9,6 +9,8 @@ const makeThumbnail = (fullPath, thumbnailPath) => {
       "-ss",
       "5",
       "-vframes",
+      "1",
+      "-update",
       "1",
       thumbnailPath,
     ]);

@@ -7,8 +7,14 @@ const stream = require("stream");
 const pipeline = promisify(stream.pipeline);
 
 const videoService = require("../../shared/database/services/videoService");
-const FF = require("../../shared/lib/FF");
+const FFOriginal = require("../../shared/lib/FF");
 const util = require("../../shared/lib/util");
+const telemetry = require("../../shared/telemetry");
+
+// Use instrumented FF module if telemetry is enabled
+const FF = telemetry.config.enabled
+  ? telemetry.createInstrumentedFF(FFOriginal)
+  : FFOriginal;
 
 // BullQueue will be injected by server.js
 let queue = null;
@@ -60,14 +66,13 @@ const uploadVideo = async (req, res) => {
   }
 
   try {
-    const videoDir = `./storage/${videoId}`;
+    const videoDir = path.join(process.cwd(), 'storage', videoId);
     await fs.mkdir(videoDir, { recursive: true });
 
     const fullPath = path.join(videoDir, `original.${extension}`);
-    const fileStream = fsSync.createWriteStream(fullPath);
 
-    // Pipe request to file safely
-    await pipeline(req, fileStream);
+    // Write buffer to file (req.body is Buffer from express.raw middleware)
+    await fs.writeFile(fullPath, req.body);
 
     // Generate thumbnail
     const thumbnailPath = path.join(videoDir, "thumbnail.jpg");
