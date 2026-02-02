@@ -4,3 +4,4 @@ storage/
 # video-editor-client/
 data/
 .claude
+.env
