@@ -64,12 +64,14 @@ const uploadVideo = async (req, res) => {
   // Tier-based size limits
   const isPro = req.user && req.user.tier === 'pro';
   const sizeLimit = isPro ? 500 * 1024 * 1024 : 50 * 1024 * 1024; // 500MB for Pro, 50MB for Free
-  
-  if (req.body.length > sizeLimit) {
+
+  // Quick check on Content-Length header if available
+  const contentLength = parseInt(req.headers['content-length'] || '0', 10);
+  if (contentLength > sizeLimit) {
     return res.status(400).json({
-      error: `File size too large for your ${req.user.tier} plan. Max: ${isPro ? '500MB' : '50MB'}.`,
+      error: `File size too large for your ${req.user.tier} plan (based on Content-Length). Max: ${isPro ? '500MB' : '50MB'}.`,
       limit: sizeLimit,
-      actual: req.body.length
+      actual: contentLength
     });
   }
 
@@ -80,14 +82,41 @@ const uploadVideo = async (req, res) => {
     });
   }
 
+  let fullPath = '';
   try {
     const videoDir = path.join(process.cwd(), 'storage', videoId);
     await fs.mkdir(videoDir, { recursive: true });
 
-    const fullPath = path.join(videoDir, `original.${extension}`);
+    fullPath = path.join(videoDir, `original.${extension}`);
 
-    // Write buffer to file (req.body is Buffer from express.raw middleware)
-    await fs.writeFile(fullPath, req.body);
+    // Streaming Logic: Count bytes and pipe directly to disk
+    let bytesRead = 0;
+    const limitWatcher = new stream.Transform({
+      transform(chunk, encoding, callback) {
+        bytesRead += chunk.length;
+        if (bytesRead > sizeLimit) {
+          const err = new Error('LIMIT_EXCEEDED');
+          err.limit = sizeLimit;
+          return callback(err);
+        }
+        callback(null, chunk);
+      }
+    });
+
+    const fileStream = fsSync.createWriteStream(fullPath);
+
+    try {
+      await pipeline(req, limitWatcher, fileStream);
+    } catch (err) {
+      if (err.message === 'LIMIT_EXCEEDED') {
+        return res.status(400).json({
+          error: `File size too large for your ${req.user.tier} plan. Max: ${isPro ? '500MB' : '50MB'}.`,
+          limit: sizeLimit,
+          actual: bytesRead
+        });
+      }
+      throw err; // Re-throw other errors to be caught by outer block
+    }
 
     // Generate thumbnail
     const thumbnailPath = path.join(videoDir, "thumbnail.jpg");
@@ -118,13 +147,15 @@ const uploadVideo = async (req, res) => {
 
     // Cleanup on failure
     try {
-      await fs.rm(`./storage/${videoId}`, { recursive: true, force: true });
+      await fs.rm(path.join(process.cwd(), 'storage', videoId), { recursive: true, force: true });
     } catch {}
 
-    res.status(500).json({
-      error: "Failed to upload video.",
-      details: error.message
-    });
+    if (!res.headersSent) {
+      res.status(500).json({
+        error: "Failed to upload video.",
+        details: error.message
+      });
+    }
   }
 };
 

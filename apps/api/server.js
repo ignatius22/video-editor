@@ -62,7 +62,6 @@ app.use(cors({
   credentials: true
 }));
 app.use(express.json());
-app.use(express.raw({ type: 'application/octet-stream', limit: '500mb' }));
 app.use(csrfProtection);
 
 // Add request logging middleware
