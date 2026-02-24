@@ -8,9 +8,11 @@ import {
   CheckCircle2, 
   Plus, 
   TrendingUp, 
-  AlertCircle 
+  AlertCircle,
+  ChevronLeft
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { Link } from 'react-router-dom';
 
 export default function BillingPage() {
   const { user, refreshUser } = useAuth();
@@ -82,6 +84,14 @@ export default function BillingPage() {
 
   return (
     <div className="container mx-auto py-8 px-4 max-w-6xl">
+      <Link 
+        to="/" 
+        className="inline-flex items-center gap-2 text-sm text-zinc-500 hover:text-white mb-6 transition-colors group"
+      >
+        <ChevronLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
+        Back to Dashboard
+      </Link>
+
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Billing & Credits</h1>
@@ -155,9 +165,12 @@ export default function BillingPage() {
                 Transaction History
               </h2>
               <button 
+                type="button"
                 onClick={fetchTransactions}
-                className="text-xs text-indigo-400 hover:text-indigo-300"
+                disabled={loading}
+                className="text-xs text-indigo-400 hover:text-indigo-300 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
               >
+                {loading && <div className="w-3 h-3 border-2 border-indigo-400 border-t-transparent animate-spin rounded-full" />}
                 Refresh
               </button>
             </div>

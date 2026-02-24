@@ -1,7 +1,7 @@
 import React from 'react';
 import { useAuth } from '@/context/AuthContext';
-import { User, Mail, Shield, Calendar, LogOut, Settings, Zap } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { User, Mail, Shield, Calendar, LogOut, Settings, Zap, ChevronLeft } from 'lucide-react';
+import { useNavigate, Link } from 'react-router-dom';
 
 export default function ProfilePage() {
   const { user, logout } = useAuth();
@@ -22,6 +22,14 @@ export default function ProfilePage() {
 
   return (
     <div className="container mx-auto py-12 px-4 max-w-4xl">
+      <Link 
+        to="/" 
+        className="inline-flex items-center gap-2 text-sm text-zinc-500 hover:text-white mb-6 transition-colors group"
+      >
+        <ChevronLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
+        Back to Dashboard
+      </Link>
+
       <div className="mb-10 text-center md:text-left">
         <h1 className="text-4xl font-extrabold tracking-tight mb-2">Account Profile</h1>
         <p className="text-zinc-500">Manage your personal information and security settings.</p>
