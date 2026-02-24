@@ -8,6 +8,8 @@ const logger = createLogger('api');
 const express = require('express');
 const http = require('http');
 const socketIO = require('socket.io');
+const { createAdapter } = require('@socket.io/redis-adapter');
+const Redis = require('ioredis');
 const cors = require('cors');
 const path = require('path');
 
@@ -33,8 +35,18 @@ const imageController = require('./controllers/imageController');
 const app = express();
 const server = http.createServer(app);
 
-// Initialize Socket.IO
+// Initialize Socket.IO with Redis Adapter
+const pubClient = new Redis({
+  host: config.redis.host,
+  port: config.redis.port
+});
+const subClient = pubClient.duplicate();
+
+pubClient.on('error', (err) => logger.error({ err }, 'Socket.IO Redis PubClient Error'));
+subClient.on('error', (err) => logger.error({ err }, 'Socket.IO Redis SubClient Error'));
+
 const io = socketIO(server, {
+  adapter: createAdapter(pubClient, subClient),
   cors: {
     origin: config.api.corsOrigin,
     methods: ["GET", "POST"],
