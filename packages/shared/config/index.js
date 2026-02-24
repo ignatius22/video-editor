@@ -40,5 +40,9 @@ module.exports = {
     enabled: process.env.OTEL_ENABLED === 'true',
     serviceName: process.env.OTEL_SERVICE_NAME,
     endpoint: process.env.OTEL_EXPORTER_OTLP_ENDPOINT || 'localhost:4317'
+  },
+
+  rabbitmq: {
+    url: process.env.RABBITMQ_URL || 'amqp://localhost:5672'
   }
 };

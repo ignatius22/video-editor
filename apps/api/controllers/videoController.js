@@ -273,15 +273,19 @@ const resizeVideo = async (req, res) => {
       return res.status(403).json({ error: "Access denied." });
     }
 
-    // Add resize operation to database
-    const operation = await videoService.addOperation(videoId, {
-      type: 'resize',
-      status: 'pending',
-      parameters: { width: parseInt(width), height: parseInt(height) }
+    // Atomic job submission: Operation record + Credit reservation + Outbox events
+    const operation = await transaction(async (client) => {
+      const op = await videoService.addOperation(videoId, {
+        type: 'resize',
+        status: 'pending',
+        parameters: { width: parseInt(width), height: parseInt(height) }
+      }, client);
+
+      await userService.reserveCredits(req.userId, 1, `op-${op.id}`, client);
+      return op;
     });
 
-    // Reserve credit linked to operationId
-    await userService.reserveCredits(req.userId, 1, `op-${operation.id}`);
+    // Enqueue job after DB success
 
     // Enqueue job
     if (queue) {
@@ -341,15 +345,19 @@ const convertVideo = async (req, res) => {
       });
     }
 
-    // Add convert operation to database
-    const operation = await videoService.addOperation(videoId, {
-      type: 'convert',
-      status: 'pending',
-      parameters: { targetFormat, originalFormat: video.extension }
+    // Atomic job submission: Operation record + Credit reservation + Outbox events
+    const operation = await transaction(async (client) => {
+      const op = await videoService.addOperation(videoId, {
+        type: 'convert',
+        status: 'pending',
+        parameters: { targetFormat, originalFormat: video.extension }
+      }, client);
+
+      await userService.reserveCredits(req.userId, 1, `op-${op.id}`, client);
+      return op;
     });
 
-    // Reserve credit linked to operationId
-    await userService.reserveCredits(req.userId, 1, `op-${operation.id}`);
+    // Enqueue job after DB success
 
     // Enqueue job
     if (queue) {

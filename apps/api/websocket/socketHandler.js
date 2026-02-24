@@ -5,7 +5,7 @@
 const createLogger = require('@video-editor/shared/lib/logger');
 const logger = createLogger('websocket');
 
-module.exports = (io, queue) => {
+module.exports = async (io, queue, eventBus) => {
   io.on('connection', (socket) => {
     logger.info({ socketId: socket.id }, 'WebSocket client connected');
 
@@ -25,24 +25,23 @@ module.exports = (io, queue) => {
     });
   });
 
-  // Listen to Bull queue events and broadcast to clients
+  // 1. Listen to Durable Events from EventBus and broadcast to clients
+  if (eventBus) {
+    await eventBus.subscribe('job.*', async (data, metadata) => {
+      const { eventType } = metadata;
+      const resourceId = data.videoId || data.imageId;
+      
+      if (!resourceId) return;
+
+      // Map outbox event types to Socket.IO event names if necessary
+      // For now they are the same: job.started, job.completed, job.failed, job.queued
+      logger.info({ resourceId, eventType }, 'Broadcasting durable event via Socket.IO');
+      io.to(resourceId).emit(eventType, data);
+    });
+  }
+
+  // 2. Listen to Ephemeral events (progress) from Bull queue
   if (queue) {
-    queue.on('job:queued', (data) => {
-      const resourceId = data.videoId || data.imageId;
-      if (resourceId) {
-        logger.debug({ resourceId, jobId: data.jobId }, 'Broadcasting job:queued');
-        io.to(resourceId).emit('job:queued', data);
-      }
-    });
-
-    queue.on('job:started', (data) => {
-      const resourceId = data.videoId || data.imageId;
-      if (resourceId) {
-        logger.debug({ resourceId, jobId: data.jobId }, 'Broadcasting job:started');
-        io.to(resourceId).emit('job:started', data);
-      }
-    });
-
     queue.on('job:progress', (data) => {
       const resourceId = data.videoId || data.imageId;
       if (resourceId) {
@@ -51,22 +50,6 @@ module.exports = (io, queue) => {
           logger.debug({ resourceId, jobId: data.jobId, progress: data.progress }, 'Broadcasting job:progress');
         }
         io.to(resourceId).emit('job:progress', data);
-      }
-    });
-
-    queue.on('job:completed', (data) => {
-      const resourceId = data.videoId || data.imageId;
-      if (resourceId) {
-        logger.info({ resourceId, jobId: data.jobId }, 'Broadcasting job:completed');
-        io.to(resourceId).emit('job:completed', data);
-      }
-    });
-
-    queue.on('job:failed', (data) => {
-      const resourceId = data.videoId || data.imageId;
-      if (resourceId) {
-        logger.error({ resourceId, jobId: data.jobId, error: data.error }, 'Broadcasting job:failed');
-        io.to(resourceId).emit('job:failed', data);
       }
     });
   }

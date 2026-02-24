@@ -25,8 +25,9 @@ class EventBus {
 
   /**
    * Connect to RabbitMQ and setup exchanges
+   * @param {boolean} rethrow - Whether to rethrow the error if connection fails
    */
-  async connect() {
+  async connect(rethrow = false) {
     try {
       console.log(`[EventBus] Connecting to RabbitMQ: ${this.rabbitMQUrl}`);
       this.connection = await amqp.connect(this.rabbitMQUrl);
@@ -71,6 +72,7 @@ class EventBus {
     } catch (error) {
       console.error('[EventBus] Failed to connect to RabbitMQ:', error.message);
       this.isConnected = false;
+      if (rethrow) throw error;
       setTimeout(() => this.connect(), this.reconnectDelay);
     }
   }

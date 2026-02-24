@@ -119,6 +119,17 @@ services:
     networks:
       - video-editor-network
 
+  # RabbitMQ - Message Broker for Event Bus
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: video-editor-rabbitmq
+    ports:
+      - "5672:5672"   # AMQP
+      - "15672:15672" # Management UI
+    restart: unless-stopped
+    networks:
+      - video-editor-network
+
 volumes:
   postgres_data:
     driver: local

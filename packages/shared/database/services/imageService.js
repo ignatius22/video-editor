@@ -1,4 +1,5 @@
 const { query, transaction } = require('../db');
+const outboxRepo = require('../../outbox/outboxRepo');
 
 /**
  * Image Service
@@ -196,15 +197,33 @@ class ImageService {
    * @param {object} operationData - Operation details
    * @returns {Promise<object>} Created operation
    */
-  async addOperation(imageId, { type, status = 'pending', parameters, resultPath = null, errorMessage = null }) {
-    const result = await query(
+  async addOperation(imageId, { type, status = 'pending', parameters, resultPath = null, errorMessage = null }, client = null) {
+    const db = client || { query };
+    const result = await db.query(
       `INSERT INTO image_operations (image_id, operation_type, status, parameters, result_path, error_message)
        VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING *`,
       [imageId, type, status, JSON.stringify(parameters), resultPath, errorMessage]
     );
 
-    return result.rows[0];
+    const operation = result.rows[0];
+
+    // Emit outbox event
+    await outboxRepo.insertEvent(db, {
+      eventType: `job.queued`,
+      aggregateType: 'job',
+      aggregateId: operation.id.toString(),
+      idempotencyKey: `job:${operation.id}:queued`,
+      payload: { 
+        jobId: operation.id, 
+        imageId, 
+        type, 
+        status: 'queued',
+        parameters 
+      }
+    });
+
+    return operation;
   }
 
   /**
@@ -215,14 +234,43 @@ class ImageService {
    * @param {string} errorMessage - Error message (optional)
    * @returns {Promise<object>} Updated operation
    */
-  async updateOperationStatus(operationId, status, resultPath = null, errorMessage = null) {
-    const result = await query(
+  async updateOperationStatus(operationId, status, resultPath = null, errorMessage = null, client = null) {
+    const db = client || { query };
+    const result = await db.query(
       `UPDATE image_operations
        SET status = $1, result_path = $2, error_message = $3, updated_at = CURRENT_TIMESTAMP
        WHERE id = $4
        RETURNING *`,
       [status, resultPath, errorMessage, operationId]
     );
+
+    const operation = result.rows[0];
+    if (operation) {
+      // Map status to event type
+      const eventTypeMap = {
+        'processing': 'job.started',
+        'completed': 'job.completed',
+        'failed': 'job.failed'
+      };
+
+      const eventType = eventTypeMap[status];
+      if (eventType) {
+        await outboxRepo.insertEvent(db, {
+          eventType,
+          aggregateType: 'job',
+          aggregateId: operation.id.toString(),
+          idempotencyKey: `job:${operation.id}:${status}`,
+          payload: { 
+            jobId: operation.id, 
+            imageId: operation.image_id, 
+            type: operation.operation_type, 
+            status,
+            resultPath,
+            errorMessage
+          }
+        });
+      }
+    }
 
     return result.rows[0];
   }

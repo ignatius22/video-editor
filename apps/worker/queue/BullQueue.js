@@ -1,5 +1,7 @@
 const Bull = require('bull');
 const EventEmitter = require('events');
+const fs = require('fs').promises;
+const { transaction } = require('@video-editor/shared/database/db');
 const videoService = require('@video-editor/shared/database/services/videoService');
 const imageService = require('@video-editor/shared/database/services/imageService');
 const FFOriginal = require('@video-editor/shared/lib/FF');
@@ -131,10 +133,19 @@ class BullQueue extends EventEmitter {
 
         if (operationId) {
           try {
-            await service.updateOperationStatus(operationId, 'failed', null, `Failed after ${job.attemptsMade} attempts: ${err}`);
-            
-            // Release/Refund credits on terminal failure
-            await userService.releaseCredits(`op-${operationId}`);
+            // Use transaction for atomic status update + credit release + outbox events
+            await transaction(async (client) => {
+              await service.updateOperationStatus(
+                operationId, 
+                'failed', 
+                null, 
+                `Failed after ${job.attemptsMade} attempts: ${err}`,
+                client
+              );
+              
+              // Release/Refund credits on terminal failure
+              await userService.releaseCredits(`op-${operationId}`, client);
+            });
           } catch (dbErr) {
             logger.error({ dbErr, jobId }, 'Failed to update terminal failure status or release credits');
           }
@@ -181,69 +192,17 @@ class BullQueue extends EventEmitter {
     // Global events
     this.queue.on('global:active', (jobId, result) => {
       // Job started processing
-      this.queue.getJob(jobId).then(job => {
-        if (job) {
-          this.emit('job:started', {
-            jobId: job.id,
-            type: job.name,
-            videoId: job.data.videoId || job.data.imageId,
-            startedAt: new Date().toISOString(),
-            queuedAt: new Date(job.timestamp).toISOString()
-          });
-        }
-      });
+      // Driven by outbox (job.started event generated in service.updateOperationStatus)
     });
 
     this.queue.on('global:completed', (jobId, result) => {
       // Job completed successfully
-      this.queue.getJob(jobId).then(async job => {
-        if (job) {
-          const completedAt = new Date().toISOString();
-          const queuedAt = new Date(job.timestamp).toISOString();
-          const startedAt = new Date(job.processedOn).toISOString();
-
-          this.emit('job:completed', {
-            jobId: job.id,
-            type: job.name,
-            videoId: job.data.videoId || job.data.imageId,
-            result: JSON.parse(result),
-            queuedAt,
-            startedAt,
-            completedAt,
-            duration: job.finishedOn - job.processedOn
-          });
-
-          // Capture credits on success
-          if (job.data.operationId) {
-            try {
-              await userService.captureCredits(`op-${job.data.operationId}`);
-            } catch (err) {
-              logger.error({ err, jobId: job.id, operationId: job.data.operationId }, 'Failed to capture credits on job completion');
-            }
-          } else if (job.name === 'extract-audio' || job.name === 'resize' || job.name === 'convert') {
-            // Fallback for sync or legacy jobs that might use different ID formats
-            // (In this refactor, all async jobs should have operationId)
-          }
-        }
-      });
+      // Business logic (status update & credit capture) moved to processors for atomicity
     });
 
-    // Standard job lifecycle listeners (for logging/custom events)
+    // Standard job lifecycle listeners
     this.queue.on('global:failed', (jobId, err) => {
-      // The setupFailureHandling() listener handles terminal DB updates
-      // This listener just ensures any other logic (like custom events) still runs
-      this.queue.getJob(jobId).then(job => {
-        if (job) {
-          const errorMessage = err?.message || (typeof err === 'string' ? err : 'Unknown error');
-          this.emit('job:failed', {
-            jobId: job.id,
-            type: job.name,
-            videoId: job.data.videoId || job.data.imageId,
-            error: errorMessage,
-            attemptsMade: job.attemptsMade
-          });
-        }
-      });
+      // Driven by outbox (job.failed event generated in setupFailureHandling)
     });
 
     this.queue.on('global:progress', (jobId, progress) => {
@@ -263,8 +222,6 @@ class BullQueue extends EventEmitter {
 
   async restoreIncompleteJobs() {
     try {
-      const fs = require('fs').promises;
-
       // Restore pending operations from database
       const pendingOperations = await videoService.getPendingOperations(100);
 
@@ -273,15 +230,19 @@ class BullQueue extends EventEmitter {
 
       for (const operation of pendingOperations) {
         const params = operation.parameters;
-        const originalPath = `${config.storage.path}/${operation.video_id}/original.${operation.video_extension}`;
+        const idPrefix = operation.video_id ? 'video_id' : 'image_id';
+        const resourceId = operation.video_id || operation.image_id;
+        const extension = operation.video_extension || operation.image_extension;
+        const originalPath = `${config.storage.path}/${resourceId}/original.${extension}`;
 
         // Check if the original file exists before restoring the job
         try {
           await fs.access(originalPath);
         } catch (err) {
           // File doesn't exist, mark operation as failed and skip
-          console.log(`[BullQueue] Skipping ${operation.operation_type} job for ${operation.video_id} - original file not found`);
-          await videoService.updateOperationStatus(operation.id, 'failed', null, 'Original file not found');
+          console.log(`[BullQueue] Skipping ${operation.operation_type} job for ${resourceId} - original file not found`);
+          const service = operation.video_id ? videoService : imageService;
+          await service.updateOperationStatus(operation.id, 'failed', null, 'Original file not found');
           skippedCount++;
           continue;
         }
@@ -429,9 +390,12 @@ class BullQueue extends EventEmitter {
           // Update progress: Processing complete
           await bullJob.progress(75);
 
-          // Update operation status to completed
+          // Update operation status to completed AND capture credits atomically
           if (operation) {
-            await videoService.updateOperationStatus(operation.id, 'completed', targetVideoPath);
+            await transaction(async (client) => {
+              await videoService.updateOperationStatus(operation.id, 'completed', targetVideoPath, null, client);
+              await userService.captureCredits(`op-${operation.id}`, client);
+            });
           }
 
           // Complete
@@ -506,9 +470,12 @@ class BullQueue extends EventEmitter {
           // Update progress: Processing complete
           await bullJob.progress(75);
 
-          // Update operation status to completed
+          // Update operation status to completed AND capture credits atomically
           if (operation) {
-            await videoService.updateOperationStatus(operation.id, 'completed', convertedPath);
+            await transaction(async (client) => {
+              await videoService.updateOperationStatus(operation.id, 'completed', convertedPath, null, client);
+              await userService.captureCredits(`op-${operation.id}`, client);
+            });
           }
 
           // Complete
@@ -577,9 +544,12 @@ class BullQueue extends EventEmitter {
           // Update progress: Processing complete
           await bullJob.progress(75);
 
-          // Update operation status to completed
+          // Update operation status to completed AND capture credits atomically
           if (operation) {
-            await imageService.updateOperationStatus(operation.id, 'completed', targetImagePath);
+            await transaction(async (client) => {
+              await imageService.updateOperationStatus(operation.id, 'completed', targetImagePath, null, client);
+              await userService.captureCredits(`op-${operation.id}`, client);
+            });
           }
 
           // Complete
@@ -647,9 +617,12 @@ class BullQueue extends EventEmitter {
           // Update progress: Processing complete
           await bullJob.progress(75);
 
-          // Update operation status to completed
+          // Update operation status to completed AND capture credits atomically
           if (operation) {
-            await imageService.updateOperationStatus(operation.id, 'completed', targetImagePath);
+            await transaction(async (client) => {
+              await imageService.updateOperationStatus(operation.id, 'completed', targetImagePath, null, client);
+              await userService.captureCredits(`op-${operation.id}`, client);
+            });
           }
 
           // Complete
@@ -719,9 +692,12 @@ class BullQueue extends EventEmitter {
           // Update progress: Processing complete
           await bullJob.progress(75);
 
-          // Update operation status to completed
+          // Update operation status to completed AND capture credits atomically
           if (operation) {
-            await imageService.updateOperationStatus(operation.id, 'completed', targetImagePath);
+            await transaction(async (client) => {
+              await imageService.updateOperationStatus(operation.id, 'completed', targetImagePath, null, client);
+              await userService.captureCredits(`op-${operation.id}`, client);
+            });
           }
 
           // Complete
