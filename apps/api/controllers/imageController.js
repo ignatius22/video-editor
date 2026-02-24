@@ -209,15 +209,19 @@ const cropImage = async (req, res) => {
       return res.status(400).json({ error: "Crop area exceeds image bounds." });
     }
 
-    // Add image operation to database
-    const operation = await imageService.addOperation(imageId, {
-      type: 'crop',
-      status: 'pending',
-      parameters: { x: parseInt(cropX), y: parseInt(cropY), width: parseInt(cropWidth), height: parseInt(cropHeight) }
+    // Atomic job submission: Operation record + Credit reservation + Outbox events
+    const operation = await transaction(async (client) => {
+      const op = await imageService.addOperation(imageId, {
+        type: 'crop',
+        status: 'pending',
+        parameters: { x: parseInt(cropX), y: parseInt(cropY), width: parseInt(cropWidth), height: parseInt(cropHeight) }
+      }, client);
+
+      await userService.reserveCredits(req.userId, 1, `op-${op.id}`, client);
+      return op;
     });
 
-    // Reserve credit linked to operationId
-    await userService.reserveCredits(req.userId, 1, `op-${operation.id}`);
+    // Enqueue job after DB success
 
     // Enqueue job
     if (queue) {
@@ -265,15 +269,19 @@ const resizeImage = async (req, res) => {
       return res.status(403).json({ error: "Access denied." });
     }
 
-    // Add image operation to database
-    const operation = await imageService.addOperation(imageId, {
-      type: 'resize',
-      status: 'pending',
-      parameters: { width: parseInt(width), height: parseInt(height) }
+    // Atomic job submission: Operation record + Credit reservation + Outbox events
+    const operation = await transaction(async (client) => {
+      const op = await imageService.addOperation(imageId, {
+        type: 'resize',
+        status: 'pending',
+        parameters: { width: parseInt(width), height: parseInt(height) }
+      }, client);
+
+      await userService.reserveCredits(req.userId, 1, `op-${op.id}`, client);
+      return op;
     });
 
-    // Reserve credit linked to operationId
-    await userService.reserveCredits(req.userId, 1, `op-${operation.id}`);
+    // Enqueue job after DB success
 
     // Enqueue job
     if (queue) {
@@ -332,15 +340,19 @@ const convertImage = async (req, res) => {
       });
     }
 
-    // Add image operation to database
-    const operation = await imageService.addOperation(imageId, {
-      type: 'convert',
-      status: 'pending',
-      parameters: { targetFormat, originalFormat: image.extension }
+    // Atomic job submission: Operation record + Credit reservation + Outbox events
+    const operation = await transaction(async (client) => {
+      const op = await imageService.addOperation(imageId, {
+        type: 'convert-image',
+        status: 'pending',
+        parameters: { targetFormat, originalFormat: image.extension }
+      }, client);
+
+      await userService.reserveCredits(req.userId, 1, `op-${op.id}`, client);
+      return op;
     });
 
-    // Reserve credit linked to operationId
-    await userService.reserveCredits(req.userId, 1, `op-${operation.id}`);
+    // Enqueue job after DB success
 
     // Enqueue job
     if (queue) {

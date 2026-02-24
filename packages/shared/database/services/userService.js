@@ -1,5 +1,6 @@
 const { query, transaction } = require('../db');
 const bcrypt = require('bcrypt');
+const outboxRepo = require('../../outbox/outboxRepo');
 
 const SALT_ROUNDS = 10;
 
@@ -303,6 +304,15 @@ class UserService {
         [userId, -amount, 'reservation', `Reserved for operation ${operationId}`, operationId]
       );
 
+      // 5. Emit outbox event
+      await outboxRepo.insertEvent(client, {
+        eventType: 'billing.reservation.reserved',
+        aggregateType: 'reservation',
+        aggregateId: operationId,
+        idempotencyKey: `reservation:${operationId}:reserved`,
+        payload: { userId, amount, operationId, status: 'reserved' }
+      });
+
       return result.rows[0];
     });
   }
@@ -333,10 +343,20 @@ class UserService {
       const reservation = res.rows[0];
 
       // 3. Create capture entry (Balance not updated, it was lowered at reservation)
+      // Amount is 0 because the deduction happened at the reservation step.
       await client.query(
         'INSERT INTO credit_transactions (user_id, amount, type, description, operation_id) VALUES ($1, $2, $3, $4, $5)',
-        [reservation.user_id, reservation.amount, 'debit_capture', `Captured for operation ${operationId}`, operationId]
+        [reservation.user_id, 0, 'debit_capture', `Captured for operation ${operationId}`, operationId]
       );
+
+      // 4. Emit outbox event
+      await outboxRepo.insertEvent(client, {
+        eventType: 'billing.reservation.captured',
+        aggregateType: 'reservation',
+        aggregateId: operationId,
+        idempotencyKey: `reservation:${operationId}:captured`,
+        payload: { userId: reservation.user_id, amount: reservation.amount, operationId, status: 'captured' }
+      });
 
       return true;
     });
@@ -377,6 +397,15 @@ class UserService {
         'INSERT INTO credit_transactions (user_id, amount, type, description, operation_id) VALUES ($1, $2, $3, $4, $5)',
         [reservation.user_id, refundAmount, 'refund', `Refunded for failed operation ${operationId}`, operationId]
       );
+
+      // 5. Emit outbox event
+      await outboxRepo.insertEvent(client, {
+        eventType: 'billing.reservation.released',
+        aggregateType: 'reservation',
+        aggregateId: operationId,
+        idempotencyKey: `reservation:${operationId}:released`,
+        payload: { userId: reservation.user_id, amount: refundAmount, operationId, status: 'released' }
+      });
 
       return result.rows[0];
     });

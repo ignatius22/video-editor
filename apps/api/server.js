@@ -21,6 +21,8 @@ const billingRoutes = require('./routes/billingRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const { authenticate, adminOnly } = require('./middleware/auth');
 const errorHandler = require('./middleware/errorHandler');
+const { EventBus } = require('@video-editor/shared/eventBus');
+const OutboxDispatcher = require('./lib/outboxDispatcher');
 const { 
   helmetConfig, 
   globalLimiter, 
@@ -99,68 +101,71 @@ app.use('/api/admin', authenticate, adminOnly, adminRoutes);
 // Error handler (must be last)
 app.use(errorHandler);
 
-// Initialize Bull Queue (if not running in test mode)
+// Initialize Components (if not running in test mode)
 let queue = null;
 if (process.env.NODE_ENV !== 'test') {
-  try {
-    const BullQueue = require('@video-editor/worker/queue/BullQueue');
-    queue = new BullQueue();
+  (async () => {
+    try {
+      const BullQueue = require('@video-editor/worker/queue/BullQueue');
+      queue = new BullQueue();
 
-    // Inject queue into controllers
-    videoController.setQueue(queue);
-    imageController.setQueue(queue);
+      // Initialize EventBus
+      const eventBus = new EventBus(config.rabbitmq.url, 'api');
+      await eventBus.connect(true);
 
-    // Initialize WebSocket handler
-    require('./websocket/socketHandler')(io, queue);
+      // Initialize WebSocket handler
+      const setupWebSockets = require('./websocket/socketHandler');
+      await setupWebSockets(io, queue, eventBus);
 
-    logger.info('Bull queue initialized');
-  } catch (error) {
-    logger.warn({ err: error.message }, 'Bull queue not initialized (worker service may be running separately)');
-  }
+      // Initialize OutboxDispatcher (start AFTER subscribers are ready)
+      const outboxDispatcher = new OutboxDispatcher(eventBus, {
+        pollingInterval: 1000,
+        batchSize: 10
+      });
+      outboxDispatcher.start();
+
+      logger.info('Bull queue and Outbox Dispatcher initialized');
+
+      // Attach to app for shutdown
+      app.set('eventBus', eventBus);
+      app.set('outboxDispatcher', outboxDispatcher);
+    } catch (error) {
+      logger.error({ err: error.message, stack: error.stack }, 'Queue/Dispatcher initialization failed');
+    }
+  })();
 }
 
 // Graceful shutdown
-process.on('SIGTERM', async () => {
-  logger.info('SIGTERM received, shutting down gracefully...');
+const shutdown = async (signal) => {
+  logger.info(`${signal} received, shutting down gracefully...`);
+  
   server.close(async () => {
     logger.info('HTTP server closed');
 
-    // Flush telemetry before closing queue
+    if (queue) {
+      await queue.close();
+      logger.info('Queue closed');
+    }
+
+    const eventBus = app.get('eventBus');
+    const outboxDispatcher = app.get('outboxDispatcher');
+
+    if (outboxDispatcher) outboxDispatcher.stop();
+    if (eventBus) {
+      await eventBus.close();
+      logger.info('EventBus closed');
+    }
+
     if (sdk) {
       await telemetry.shutdownTelemetry();
     }
 
-    if (queue) {
-      queue.close().then(() => {
-        logger.info('Queue closed');
-        process.exit(0);
-      });
-    } else {
-      process.exit(0);
-    }
+    process.exit(0);
   });
-});
+};
 
-process.on('SIGINT', async () => {
-  logger.info('SIGINT received, shutting down gracefully...');
-  server.close(async () => {
-    logger.info('HTTP server closed');
-
-    // Flush telemetry before closing queue
-    if (sdk) {
-      await telemetry.shutdownTelemetry();
-    }
-
-    if (queue) {
-      queue.close().then(() => {
-        logger.info('Queue closed');
-        process.exit(0);
-      });
-    } else {
-      process.exit(0);
-    }
-  });
-});
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
 
 // Start server
 const PORT = config.api.port;
@@ -170,7 +175,7 @@ server.listen(PORT, () => {
     env: config.api.env,
     db: `${config.database.host}:${config.database.port}`,
     redis: `${config.redis.host}:${config.redis.port}`,
-    websocket: !!queue
+    websocket: true
   }, 'VIDEO EDITOR API SERVICE STARTED');
 });
 
