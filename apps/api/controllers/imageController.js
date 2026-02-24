@@ -65,11 +65,13 @@ const uploadImage = async (req, res) => {
   const isPro = req.user && req.user.tier === 'pro';
   const sizeLimit = isPro ? 50 * 1024 * 1024 : 10 * 1024 * 1024; // 50MB for Pro, 10MB for Free
   
-  if (req.body.length > sizeLimit) {
+  // Quick check on Content-Length header if available
+  const contentLength = parseInt(req.headers['content-length'] || '0', 10);
+  if (contentLength > sizeLimit) {
     return res.status(400).json({
-      error: `File size too large for your ${req.user.tier} plan. Max: ${isPro ? '50MB' : '10MB'}.`,
+      error: `File size too large for your ${req.user.tier} plan (based on Content-Length). Max: ${isPro ? '50MB' : '10MB'}.`,
       limit: sizeLimit,
-      actual: req.body.length
+      actual: contentLength
     });
   }
 
@@ -77,14 +79,41 @@ const uploadImage = async (req, res) => {
     return res.status(400).json({ error: "Unsupported image format" });
   }
 
+  let fullPath = '';
   try {
     const imageDir = path.join(process.cwd(), 'storage', imageId);
     await fs.mkdir(imageDir, { recursive: true });
 
-    const fullPath = path.join(imageDir, `original.${extension}`);
+    fullPath = path.join(imageDir, `original.${extension}`);
 
-    // Write buffer to file (req.body is Buffer from express.raw middleware)
-    await fs.writeFile(fullPath, req.body);
+    // Streaming Logic: Count bytes and pipe directly to disk
+    let bytesRead = 0;
+    const limitWatcher = new stream.Transform({
+      transform(chunk, encoding, callback) {
+        bytesRead += chunk.length;
+        if (bytesRead > sizeLimit) {
+          const err = new Error('LIMIT_EXCEEDED');
+          err.limit = sizeLimit;
+          return callback(err);
+        }
+        callback(null, chunk);
+      }
+    });
+
+    const fileStream = fsSync.createWriteStream(fullPath);
+
+    try {
+      await pipeline(req, limitWatcher, fileStream);
+    } catch (err) {
+      if (err.message === 'LIMIT_EXCEEDED') {
+        return res.status(400).json({
+          error: `File size too large for your ${req.user.tier} plan. Max: ${isPro ? '50MB' : '10MB'}.`,
+          limit: sizeLimit,
+          actual: bytesRead
+        });
+      }
+      throw err;
+    }
 
     const dimensions = await FF.getDimensions(fullPath);
 
@@ -105,16 +134,18 @@ const uploadImage = async (req, res) => {
       dimensions
     });
   } catch (error) {
-    console.error("[API] Image upload error:", error);
+    logger.error({ err: error.message, stack: error.stack, userId: req.userId, imageId }, "Upload image error");
 
     try {
-      await fs.rm(`./storage/${imageId}`, { recursive: true, force: true });
+      await fs.rm(path.join(process.cwd(), 'storage', imageId), { recursive: true, force: true });
     } catch {}
 
-    res.status(500).json({
-      error: "Failed to upload image.",
-      details: error.message
-    });
+    if (!res.headersSent) {
+      res.status(500).json({
+        error: "Failed to upload image.",
+        details: error.message
+      });
+    }
   }
 };
 
