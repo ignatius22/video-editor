@@ -89,24 +89,50 @@ const uploadVideo = async (req, res) => {
 
     fullPath = path.join(videoDir, `original.${extension}`);
 
-    // Streaming Logic: Count bytes and pipe directly to disk
+    // Streaming Logic: Count bytes and validate content (magic numbers)
     let bytesRead = 0;
-    const limitWatcher = new stream.Transform({
+    let headerBuffer = Buffer.alloc(0);
+    let validated = false;
+
+    const validationWatcher = new stream.Transform({
       transform(chunk, encoding, callback) {
         bytesRead += chunk.length;
+        
+        // 1. Size Limit Check
         if (bytesRead > sizeLimit) {
           const err = new Error('LIMIT_EXCEEDED');
           err.limit = sizeLimit;
           return callback(err);
         }
+
+        // 2. Magic Number Validation (first 16 bytes)
+        if (!validated) {
+          headerBuffer = Buffer.concat([headerBuffer, chunk]);
+          if (headerBuffer.length >= 16) {
+            if (!util.validateMagicNumbers(headerBuffer, extension)) {
+              return callback(new Error('INVALID_CONTENT'));
+            }
+            validated = true;
+          }
+        }
+
         callback(null, chunk);
+      },
+      flush(callback) {
+        // Final check if file was too small to be validated but finished
+        if (!validated && headerBuffer.length > 0) {
+          if (!util.validateMagicNumbers(headerBuffer, extension)) {
+            return callback(new Error('INVALID_CONTENT'));
+          }
+        }
+        callback();
       }
     });
 
     const fileStream = fsSync.createWriteStream(fullPath);
 
     try {
-      await pipeline(req, limitWatcher, fileStream);
+      await pipeline(req, validationWatcher, fileStream);
     } catch (err) {
       if (err.message === 'LIMIT_EXCEEDED') {
         return res.status(400).json({
@@ -115,7 +141,12 @@ const uploadVideo = async (req, res) => {
           actual: bytesRead
         });
       }
-      throw err; // Re-throw other errors to be caught by outer block
+      if (err.message === 'INVALID_CONTENT') {
+        return res.status(400).json({
+          error: `File content mismatch. The uploaded file does not appear to be a valid ${extension.toUpperCase()} file.`
+        });
+      }
+      throw err; 
     }
 
     // Generate thumbnail

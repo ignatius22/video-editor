@@ -398,9 +398,17 @@ class BullQueue extends EventEmitter {
             await videoService.updateOperationStatus(operation.id, 'processing');
           }
 
+          // Pre-flight check
+          await this.verifyInputFile(originalVideoPath);
+
           // Resize video (FFmpeg operation is now auto-instrumented)
           await bullJob.progress(25);
-          await FF.resize(originalVideoPath, targetVideoPath, width, height);
+          await FF.resizeVideo(originalVideoPath, targetVideoPath, width, height, (progress) => {
+            bullJob.progress(25 + Math.floor(progress * 0.5)); // Scale progress from 25% to 75%
+          });
+
+          // Post-flight check
+          await this.verifyOutputFile(targetVideoPath);
 
           // Update progress: Processing complete
           await bullJob.progress(75);
@@ -467,9 +475,17 @@ class BullQueue extends EventEmitter {
             await videoService.updateOperationStatus(operation.id, 'processing');
           }
 
+          // Pre-flight check
+          await this.verifyInputFile(originalPath);
+
           // Convert format (FFmpeg operation is now auto-instrumented)
           await bullJob.progress(25);
-          await FF.convertFormat(originalPath, convertedPath, targetFormat);
+          await FF.convertVideo(originalPath, convertedPath, targetFormat, (progress) => {
+            bullJob.progress(25 + Math.floor(progress * 0.5)); // Scale progress from 25% to 75%
+          });
+
+          // Post-flight check
+          await this.verifyOutputFile(convertedPath);
 
           // Update progress: Processing complete
           await bullJob.progress(75);
@@ -533,8 +549,14 @@ class BullQueue extends EventEmitter {
             await imageService.updateOperationStatus(operation.id, 'processing');
           }
 
+          // Pre-flight check
+          await this.verifyInputFile(originalImagePath);
+
           // Crop image (FFmpeg operation is now auto-instrumented)
           await FF.cropImage(originalImagePath, targetImagePath, width, height, x, y);
+
+          // Post-flight check
+          await this.verifyOutputFile(targetImagePath);
 
           // Update progress: Processing complete
           await bullJob.progress(75);
@@ -597,8 +619,14 @@ class BullQueue extends EventEmitter {
             await imageService.updateOperationStatus(operation.id, 'processing');
           }
 
+          // Pre-flight check
+          await this.verifyInputFile(originalImagePath);
+
           // Resize image (FFmpeg operation is now auto-instrumented)
           await FF.resizeImage(originalImagePath, targetImagePath, width, height);
+
+          // Post-flight check
+          await this.verifyOutputFile(targetImagePath);
 
           // Update progress: Processing complete
           await bullJob.progress(75);
@@ -663,8 +691,14 @@ class BullQueue extends EventEmitter {
             await imageService.updateOperationStatus(operation.id, 'processing');
           }
 
+          // Pre-flight check
+          await this.verifyInputFile(originalImagePath);
+
           // Convert image format (FFmpeg operation is now auto-instrumented)
           await FF.convertImageFormat(originalImagePath, targetImagePath, targetFormat);
+
+          // Post-flight check
+          await this.verifyOutputFile(targetImagePath);
 
           // Update progress: Processing complete
           await bullJob.progress(75);
@@ -741,6 +775,41 @@ class BullQueue extends EventEmitter {
   async close() {
     await this.queue.close();
     console.log('[BullQueue] Queue closed');
+  }
+
+  /**
+   * Pre-flight sanity check for input file
+   */
+  async verifyInputFile(filePath) {
+    try {
+      await fs.access(filePath);
+      const stat = await fs.stat(filePath);
+      if (stat.size === 0) {
+        throw new Error(`Pre-flight failure: Input file is empty at ${filePath}`);
+      }
+    } catch (err) {
+      if (err.code === 'ENOENT') {
+        throw new Error(`Pre-flight failure: Input file not found at ${filePath}`);
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * Post-flight verification for output file
+   */
+  async verifyOutputFile(filePath) {
+    try {
+      const stat = await fs.stat(filePath);
+      if (stat.size === 0) {
+        throw new Error(`Post-flight failure: Output file was created but is empty at ${filePath}`);
+      }
+    } catch (err) {
+      if (err.code === 'ENOENT') {
+        throw new Error(`Post-flight failure: Output file was not created at ${filePath}`);
+      }
+      throw err;
+    }
   }
 }
 
