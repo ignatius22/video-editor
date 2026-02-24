@@ -147,25 +147,24 @@ const cropImage = async (req, res) => {
       return res.status(400).json({ error: "Crop area exceeds image bounds." });
     }
 
-    const parameters = {
-      width: parseInt(width),
-      height: parseInt(height),
-      x: parseInt(cropX),
-      y: parseInt(cropY)
-    };
-
-    await imageService.addOperation(imageId, {
-      type: "crop",
-      status: "pending",
-      parameters
+    // Add image operation to database
+    const operation = await imageService.addOperation(imageId, {
+      type: 'crop',
+      status: 'pending',
+      parameters: { x: parseInt(cropX), y: parseInt(cropY), width: parseInt(width), height: parseInt(height) }
     });
 
+    // Enqueue job
     if (queue) {
       await queue.enqueue({
         type: "crop",
         imageId,
-        ...parameters,
-        userId: req.userId
+        x: parseInt(cropX),
+        y: parseInt(cropY),
+        width: parseInt(width),
+        height: parseInt(height),
+        userId: req.userId,
+        operationId: operation.id
       });
     }
 
@@ -204,20 +203,22 @@ const resizeImage = async (req, res) => {
       return res.status(403).json({ error: "Access denied." });
     }
 
-    const parameters = { width: parseInt(width), height: parseInt(height) };
-
-    await imageService.addOperation(imageId, {
-      type: "resize",
-      status: "pending",
-      parameters
+    // Add image operation to database
+    const operation = await imageService.addOperation(imageId, {
+      type: 'resize',
+      status: 'pending',
+      parameters: { width: parseInt(width), height: parseInt(height) }
     });
 
+    // Enqueue job
     if (queue) {
       await queue.enqueue({
         type: "resize-image",
         imageId,
-        ...parameters,
-        userId: req.userId
+        width: parseInt(width),
+        height: parseInt(height),
+        userId: req.userId,
+        operationId: operation.id
       });
     }
 
@@ -269,23 +270,22 @@ const convertImage = async (req, res) => {
       });
     }
 
-    const parameters = {
-      targetFormat: targetFormat.toLowerCase(),
-      originalFormat: image.extension.toLowerCase()
-    };
-
-    await imageService.addOperation(imageId, {
-      type: "convert-image",
-      status: "pending",
-      parameters
+    // Add image operation to database
+    const operation = await imageService.addOperation(imageId, {
+      type: 'convert',
+      status: 'pending',
+      parameters: { targetFormat, originalFormat: image.extension }
     });
 
+    // Enqueue job
     if (queue) {
       await queue.enqueue({
         type: "convert-image",
         imageId,
-        ...parameters,
-        userId: req.userId
+        targetFormat,
+        originalFormat: image.extension,
+        userId: req.userId,
+        operationId: operation.id
       });
     }
 

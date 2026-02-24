@@ -25,9 +25,19 @@ class BullQueue extends EventEmitter {
         port: config.redis.port
       },
       defaultJobOptions: {
-        attempts: 1, // We handle retries manually
+        attempts: 3,
+        backoff: {
+          type: 'exponential',
+          delay: 5000,
+        },
         removeOnComplete: config.queue.removeOnComplete,
         removeOnFail: config.queue.removeOnFail
+      },
+      settings: {
+        lockDuration: 60000, // 60s lock to prevent premature "stalling" on heavy jobs
+        lockRenewTime: 30000, // Renew every 30s
+        stalledInterval: 10000, // Check for stalled jobs every 10s
+        maxStalledCount: 2
       }
     });
 
@@ -51,6 +61,9 @@ class BullQueue extends EventEmitter {
     
     // Add structured logging for internal events
     this.setupLoggingEventListeners();
+
+    // Setup global failure handling (terminal failures)
+    this.setupFailureHandling();
 
     // Restore incomplete jobs from database on startup
     this.restoreIncompleteJobs();
@@ -93,6 +106,43 @@ class BullQueue extends EventEmitter {
         resourceId: data.videoId || data.imageId,
         err: data.error 
       }, 'Job Failed');
+    });
+  }
+
+  setupFailureHandling() {
+    this.queue.on('global:failed', async (jobId, err) => {
+      const job = await this.queue.getJob(jobId);
+      if (!job) return;
+
+      // Only mark as failed in DB if all retry attempts are exhausted
+      if (job.attemptsMade >= job.opts.attempts) {
+        logger.error({ 
+          jobId, 
+          type: job.name, 
+          resourceId: job.data.videoId || job.data.imageId,
+          attempts: job.attemptsMade,
+          err: err
+        }, 'Job terminally failed after retries');
+
+        const service = job.data.videoId ? videoService : imageService;
+        const resourceId = job.data.videoId || job.data.imageId;
+        const operationId = job.data.operationId;
+
+        if (operationId) {
+          try {
+            await service.updateOperationStatus(operationId, 'failed', null, `Failed after ${job.attemptsMade} attempts: ${err}`);
+          } catch (dbErr) {
+            logger.error({ dbErr, jobId }, 'Failed to update terminal failure status in database');
+          }
+        }
+      } else {
+        logger.warn({ 
+          jobId, 
+          type: job.name, 
+          attempts: job.attemptsMade, 
+          nextRetryIn: Math.pow(2, job.attemptsMade - 1) * 5000 
+        }, 'Job failed, scheduling retry');
+      }
     });
   }
 
@@ -162,27 +212,20 @@ class BullQueue extends EventEmitter {
       });
     });
 
+    // Standard job lifecycle listeners (for logging/custom events)
     this.queue.on('global:failed', (jobId, err) => {
-      // Job failed
+      // The setupFailureHandling() listener handles terminal DB updates
+      // This listener just ensures any other logic (like custom events) still runs
       this.queue.getJob(jobId).then(job => {
         if (job) {
-          // Handle different error types (Error object, string, or undefined)
           const errorMessage = err?.message || (typeof err === 'string' ? err : 'Unknown error');
-          const errorStack = err?.stack || null;
-
-          const failedData = {
+          this.emit('job:failed', {
             jobId: job.id,
             type: job.name,
             videoId: job.data.videoId || job.data.imageId,
             error: errorMessage,
-            stack: errorStack,
-            queuedAt: new Date(job.timestamp).toISOString(),
-            startedAt: job.processedOn ? new Date(job.processedOn).toISOString() : null,
-            failedAt: new Date().toISOString(),
-            ...job.data // Include all job data for retry
-          };
-
-          this.emit('job:failed', failedData);
+            attemptsMade: job.attemptsMade
+          });
         }
       });
     });
@@ -233,58 +276,59 @@ class BullQueue extends EventEmitter {
             type: 'resize',
             videoId: operation.video_id,
             width: params.width,
-            height: params.height
+            height: params.height,
+            operationId: operation.id
           });
-          console.log(`[BullQueue] Restored resize job: ${operation.video_id} ${params.width}x${params.height}`);
+          logger.info({ videoId: operation.video_id, operationId: operation.id }, 'Restored resize job');
           restoredCount++;
         } else if (operation.operation_type === 'convert') {
-          const convertedPath = `${config.storage.path}/${operation.video_id}/converted.${params.targetFormat}`;
-
           await this.enqueue({
             type: 'convert',
             videoId: operation.video_id,
             targetFormat: params.targetFormat,
             originalFormat: params.originalFormat,
-            originalPath,
-            convertedPath
+            operationId: operation.id
           });
-          console.log(`[BullQueue] Restored convert job: ${operation.video_id} → ${params.targetFormat}`);
+          logger.info({ videoId: operation.video_id, operationId: operation.id }, 'Restored convert job');
           restoredCount++;
         } else if (operation.operation_type === 'crop') {
           await this.enqueue({
             type: 'crop',
-            imageId: operation.video_id,
+            imageId: operation.image_id,
             width: params.width,
             height: params.height,
             x: params.x,
-            y: params.y
+            y: params.y,
+            operationId: operation.id
           });
-          console.log(`[BullQueue] Restored crop job: ${operation.video_id} ${params.width}x${params.height} at (${params.x},${params.y})`);
+          logger.info({ imageId: operation.image_id, operationId: operation.id }, 'Restored crop job');
           restoredCount++;
         } else if (operation.operation_type === 'resize-image') {
           await this.enqueue({
             type: 'resize-image',
-            imageId: operation.video_id,
+            imageId: operation.image_id,
             width: params.width,
-            height: params.height
+            height: params.height,
+            operationId: operation.id
           });
-          console.log(`[BullQueue] Restored resize-image job: ${operation.video_id} ${params.width}x${params.height}`);
+          logger.info({ imageId: operation.image_id, operationId: operation.id }, 'Restored resize-image job');
           restoredCount++;
         } else if (operation.operation_type === 'convert-image') {
           await this.enqueue({
             type: 'convert-image',
-            imageId: operation.video_id,
+            imageId: operation.image_id,
             targetFormat: params.targetFormat,
-            originalFormat: params.originalFormat
+            originalFormat: params.originalFormat,
+            operationId: operation.id
           });
-          console.log(`[BullQueue] Restored convert-image job: ${operation.video_id} ${params.originalFormat} → ${params.targetFormat}`);
+          logger.info({ imageId: operation.image_id, operationId: operation.id }, 'Restored convert-image job');
           restoredCount++;
         }
       }
 
-      console.log(`[BullQueue] Restored ${restoredCount} incomplete jobs, skipped ${skippedCount} jobs with missing files`);
+      logger.info({ restoredCount, skippedCount }, 'Incomplete jobs restoration complete');
     } catch (error) {
-      console.error('[BullQueue] Error restoring incomplete jobs:', error);
+      logger.error({ err: error.message }, 'Error restoring incomplete jobs');
     }
   }
 
@@ -381,10 +425,9 @@ class BullQueue extends EventEmitter {
 
           return JSON.stringify({ width, height, outputPath: targetVideoPath });
         } catch (error) {
-          // Update operation status to failed
-          if (operation) {
-            await videoService.updateOperationStatus(operation.id, 'failed', null, error.message);
-          }
+          // NOTE: We no longer update the operation status to 'failed' here.
+          // The consolidated 'global:failed' handler in setupFailureHandling()
+          // will do this ONLY after all retry attempts are exhausted.
 
           util.deleteFile(targetVideoPath);
           throw error;
@@ -445,19 +488,10 @@ class BullQueue extends EventEmitter {
             span.setAttributes({
               'job.result.output_path': convertedPath,
               'job.result.format': targetFormat,
-            });
-          }
-
           return JSON.stringify({ targetFormat, outputPath: convertedPath });
         } catch (error) {
-          console.error(`Video conversion failed:`, error);
+          logger.error({ err: error.message, stack: error.stack, videoId }, "Video conversion failed");
           util.deleteFile(convertedPath);
-
-          // Update operation status to failed
-          if (operation) {
-            await videoService.updateOperationStatus(operation.id, 'failed', null, error.message);
-          }
-
           throw error;
         }
       }
@@ -484,7 +518,7 @@ class BullQueue extends EventEmitter {
 
         try {
           // Update progress: Starting
-          await bullJob.progress(100); // Progress is fast for images
+          await bullJob.progress(10);
 
           // Update operation status to processing
           if (operation) {
@@ -494,6 +528,9 @@ class BullQueue extends EventEmitter {
           // Crop image (FFmpeg operation is now auto-instrumented)
           await FF.cropImage(originalImagePath, targetImagePath, width, height, x, y);
 
+          // Update progress: Processing complete
+          await bullJob.progress(75);
+
           // Update operation status to completed
           if (operation) {
             await imageService.updateOperationStatus(operation.id, 'completed', targetImagePath);
@@ -501,9 +538,7 @@ class BullQueue extends EventEmitter {
 
           // Complete
           await bullJob.progress(100);
-
-          console.log(`Image cropped ${imageId} to ${width}x${height} at (${x},${y})`);
-
+          
           // Add result attributes to span
           if (span) {
             span.setAttributes({
@@ -515,13 +550,7 @@ class BullQueue extends EventEmitter {
 
           return JSON.stringify({ width, height, x, y, outputPath: targetImagePath });
         } catch (error) {
-          console.error(`Image crop failed:`, error);
-
-          // Update operation status to failed
-          if (operation) {
-            await imageService.updateOperationStatus(operation.id, 'failed', null, error.message);
-          }
-
+          logger.error({ err: error.message, stack: error.stack, imageId }, "Image crop failed");
           util.deleteFile(targetImagePath);
           throw error;
         }
@@ -549,7 +578,7 @@ class BullQueue extends EventEmitter {
 
         try {
           // Update progress: Starting
-          await bullJob.progress(100);
+          await bullJob.progress(10);
 
           // Update operation status to processing
           if (operation) {
@@ -559,6 +588,9 @@ class BullQueue extends EventEmitter {
           // Resize image (FFmpeg operation is now auto-instrumented)
           await FF.resizeImage(originalImagePath, targetImagePath, width, height);
 
+          // Update progress: Processing complete
+          await bullJob.progress(75);
+
           // Update operation status to completed
           if (operation) {
             await imageService.updateOperationStatus(operation.id, 'completed', targetImagePath);
@@ -566,8 +598,6 @@ class BullQueue extends EventEmitter {
 
           // Complete
           await bullJob.progress(100);
-
-          console.log(`Image resized ${imageId} to ${width}x${height}`);
 
           // Add result attributes to span
           if (span) {
@@ -579,13 +609,7 @@ class BullQueue extends EventEmitter {
 
           return JSON.stringify({ width, height, outputPath: targetImagePath });
         } catch (error) {
-          console.error(`Image resize failed:`, error);
-
-          // Update operation status to failed
-          if (operation) {
-            await imageService.updateOperationStatus(operation.id, 'failed', null, error.message);
-          }
-
+          logger.error({ err: error.message, stack: error.stack, imageId }, "Image resize failed");
           util.deleteFile(targetImagePath);
           throw error;
         }
@@ -616,7 +640,7 @@ class BullQueue extends EventEmitter {
 
         try {
           // Update progress: Starting
-          await bullJob.progress(100);
+          await bullJob.progress(10);
 
           // Update operation status to processing
           if (operation) {
@@ -626,6 +650,9 @@ class BullQueue extends EventEmitter {
           // Convert image format (FFmpeg operation is now auto-instrumented)
           await FF.convertImageFormat(originalImagePath, targetImagePath, targetFormat);
 
+          // Update progress: Processing complete
+          await bullJob.progress(75);
+
           // Update operation status to completed
           if (operation) {
             await imageService.updateOperationStatus(operation.id, 'completed', targetImagePath);
@@ -633,8 +660,6 @@ class BullQueue extends EventEmitter {
 
           // Complete
           await bullJob.progress(100);
-
-          console.log(`Image converted ${imageId} from ${image.extension} to ${targetFormat}`);
 
           // Add result attributes to span
           if (span) {
@@ -646,14 +671,8 @@ class BullQueue extends EventEmitter {
 
           return JSON.stringify({ targetFormat, outputPath: targetImagePath });
         } catch (error) {
-          console.error(`Image conversion failed:`, error);
+          logger.error({ err: error.message, stack: error.stack, imageId }, "Image conversion failed");
           util.deleteFile(targetImagePath);
-
-          // Update operation status to failed
-          if (operation) {
-            await imageService.updateOperationStatus(operation.id, 'failed', null, error.message);
-          }
-
           throw error;
         }
       }

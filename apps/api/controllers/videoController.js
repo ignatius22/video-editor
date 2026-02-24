@@ -202,7 +202,7 @@ const resizeVideo = async (req, res) => {
     }
 
     // Add resize operation to database
-    await videoService.addOperation(videoId, {
+    const operation = await videoService.addOperation(videoId, {
       type: 'resize',
       status: 'pending',
       parameters: { width: parseInt(width), height: parseInt(height) }
@@ -215,7 +215,8 @@ const resizeVideo = async (req, res) => {
         videoId,
         width: parseInt(width),
         height: parseInt(height),
-        userId: req.userId
+        userId: req.userId,
+        operationId: operation.id
       });
     }
 
@@ -268,14 +269,11 @@ const convertVideo = async (req, res) => {
       });
     }
 
-    // Add conversion operation to database
-    await videoService.addOperation(videoId, {
+    // Add convert operation to database
+    const operation = await videoService.addOperation(videoId, {
       type: 'convert',
       status: 'pending',
-      parameters: {
-        targetFormat: targetFormat.toLowerCase(),
-        originalFormat: video.extension.toLowerCase()
-      }
+      parameters: { targetFormat, originalFormat: video.extension }
     });
 
     // Enqueue job
@@ -283,9 +281,10 @@ const convertVideo = async (req, res) => {
       await queue.enqueue({
         type: "convert",
         videoId,
-        targetFormat: targetFormat.toLowerCase(),
-        originalFormat: video.extension.toLowerCase(),
-        userId: req.userId
+        targetFormat,
+        originalFormat: video.extension,
+        userId: req.userId,
+        operationId: operation.id
       });
     }
 
