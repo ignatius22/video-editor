@@ -53,7 +53,7 @@ class OutboxRepo {
         locked_by = $2
       WHERE id IN (
         SELECT id FROM outbox_events
-        WHERE status IN ('pending', 'failed')
+        WHERE status IN ('pending', 'failed', 'processing')
           AND next_attempt_at <= CURRENT_TIMESTAMP
           AND (locked_at IS NULL OR locked_at < CURRENT_TIMESTAMP - interval '1 second' * $3)
         ORDER BY created_at ASC
