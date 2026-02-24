@@ -56,6 +56,11 @@ const shutdown = async () => {
     await queue.close();
     console.log('[Worker] Queue closed');
 
+    // Kill any remaining active FFmpeg processes
+    const FF = require('@video-editor/shared/lib/FF');
+    FF.cleanupProcesses();
+    console.log('[Worker] Active FFmpeg processes cleaned up');
+
     // Close database connections
     await db.pool.end();
     console.log('[Worker] Database connections closed');

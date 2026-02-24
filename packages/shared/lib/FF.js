@@ -1,553 +1,312 @@
 const { spawn } = require("node:child_process");
 
-const makeThumbnail = (fullPath, thumbnailPath) => {
-  // ffmpeg -i video.mp4 -ss 5 -vframes 1 -update 1 thumbnail.jpg
-  return new Promise((resolve, reject) => {
-    const ffmpeg = spawn("ffmpeg", [
-      "-i",
-      fullPath,
-      "-ss",
-      "5",
-      "-vframes",
-      "1",
-      "-update",
-      "1",
-      thumbnailPath,
-    ]);
+// Track active processes for cleanup
+const activeProcesses = new Set();
 
-    ffmpeg.on("close", (code) => {
+/**
+ * Kill all active processes (useful for graceful shutdown)
+ */
+const cleanupProcesses = () => {
+  for (const proc of activeProcesses) {
+    try {
+      proc.kill('SIGKILL');
+    } catch (err) {}
+  }
+  activeProcesses.clear();
+};
+
+/**
+ * Helper to run a command with a timeout
+ */
+const runCommand = (command, args, options = {}) => {
+  const { 
+    timeout = 300000, // Default 5 minutes
+    onStdout,
+    onStderr
+  } = options;
+
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args);
+    activeProcesses.add(child);
+
+    let isTimedOut = false;
+    const timer = setTimeout(() => {
+      isTimedOut = true;
+      child.kill('SIGKILL'); // Force kill
+      reject(new Error(`Process timed out after ${timeout}ms: ${command} ${args.join(' ')}`));
+    }, timeout);
+
+    child.stdout.on("data", (data) => {
+      if (onStdout) onStdout(data);
+    });
+
+    child.stderr.on("data", (data) => {
+      if (onStderr) onStderr(data);
+    });
+
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      activeProcesses.delete(child);
+      
+      if (isTimedOut) return; // Promise already rejected
+
       if (code === 0) {
         resolve();
       } else {
-        reject(`FFmpeg existed with this code: ${code}`);
+        reject(new Error(`${command} exited with code: ${code}`));
       }
     });
 
-    ffmpeg.on("error", (err) => {
+    child.on("error", (err) => {
+      clearTimeout(timer);
+      activeProcesses.delete(child);
       reject(err);
     });
   });
+};
+
+const makeThumbnail = (fullPath, thumbnailPath) => {
+  // ffmpeg -i video.mp4 -ss 5 -vframes 1 -update 1 thumbnail.jpg
+  return runCommand("ffmpeg", [
+    "-i", fullPath,
+    "-ss", "5",
+    "-vframes", "1",
+    "-update", "1",
+    thumbnailPath,
+  ], { timeout: 30000 }); // 30s timeout for thumbnail
 };
 
 const getDimensions = (fullPath) => {
   // ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0 video.mp4
-  return new Promise((resolve, reject) => {
-    const ffprobe = spawn("ffprobe", [
-      "-v",
-      "error",
-      "-select_streams",
-      "v:0",
-      "-show_entries",
-      "stream=width,height",
-      "-of",
-      "csv=p=0",
-      fullPath,
-    ]);
-
-    let dimensions = "";
-    ffprobe.stdout.on("data", (data) => {
-      dimensions += data.toString("utf8");
-    });
-
-    ffprobe.on("close", (code) => {
-      if (code === 0) {
-        dimensions = dimensions.replace(/\s/g, "").split(",");
-        resolve({
-          width: Number(dimensions[0]),
-          height: Number(dimensions[1]),
-        });
-      } else {
-        reject(`FFprobe existed with this code: ${code}`);
-      }
-    });
-
-    ffprobe.on("error", (err) => {
-      reject(err);
-    });
+  let dimensions = "";
+  return runCommand("ffprobe", [
+    "-v", "error",
+    "-select_streams", "v:0",
+    "-show_entries", "stream=width,height",
+    "-of", "csv=p=0",
+    fullPath,
+  ], { 
+    timeout: 30000,
+    onStdout: (data) => { dimensions += data.toString("utf8"); }
+  }).then(() => {
+    const parts = dimensions.replace(/\s/g, "").split(",");
+    return {
+      width: Number(parts[0]),
+      height: Number(parts[1]),
+    };
   });
 };
 
 const extractAudio = (originalVideoPath, targetAudioPath) => {
-  return new Promise((resolve, reject) => {
-    // ffmpeg -i video.mp4 -vn -c:a copy audio.aac
-    const ffmpeg = spawn("ffmpeg", [
-      "-i",
-      originalVideoPath,
-      "-vn",
-      "-c:a",
-      "copy",
-      targetAudioPath,
-    ]);
-
-    ffmpeg.on("close", (code) => {
-      if (code === 0) {
-        resolve();
-      } else {
-        reject(`FFmpeg existed with this code: ${code}`);
-      }
-    });
-
-    ffmpeg.on("error", (err) => {
-      reject(err);
-    });
-  });
+  return runCommand("ffmpeg", [
+    "-i", originalVideoPath,
+    "-vn",
+    "-c:a", "copy",
+    targetAudioPath,
+  ]);
 };
 
 const resize = (originalVideoPath, targetVideoPath, width, height) => {
-  return new Promise((resolve, reject) => {
-    // ffmpeg -i video.mp4 -vf scale=320:240 -c:a copy video-320x240.mp4
-    const ffmpeg = spawn("ffmpeg", [
-      "-i",
-      originalVideoPath,
-      "-vf",
-      `scale=${width}x${height}`,
-      "-c:a",
-      "copy",
-      "-threads",
-      "2",
-      "-loglevel",
-      "error",
-      "-y",
-      targetVideoPath,
-    ]);
-
-    ffmpeg.stderr.on("data", (data) => {
-      console.log(data.toString("utf8"));
-    });
-
-    ffmpeg.on("close", (code) => {
-      if (code === 0) {
-        resolve();
-      } else {
-        reject(`FFmpeg existed with this code: ${code}`);
-      }
-    });
-
-    ffmpeg.on("error", (err) => {
-      reject(err);
-    });
+  return runCommand("ffmpeg", [
+    "-i", originalVideoPath,
+    "-vf", `scale=${width}x${height}`,
+    "-c:a", "copy",
+    "-threads", "2",
+    "-loglevel", "error",
+    "-y",
+    targetVideoPath,
+  ], {
+    onStderr: (data) => { console.error(data.toString("utf8")); }
   });
 };
 
 const convertFormat = (originalVideoPath, targetVideoPath, targetFormat) => {
-  return new Promise((resolve, reject) => {
-    let videoCodec;
-    let audioCodec;
+  let videoCodec;
+  let audioCodec;
 
-    switch (targetFormat.toLowerCase()) {
-      case "mp4":
-      case "mov":
-        videoCodec = "libx264";
-        audioCodec = "aac";
-        break;
+  switch (targetFormat.toLowerCase()) {
+    case "mp4":
+    case "mov":
+      videoCodec = "libx264";
+      audioCodec = "aac";
+      break;
 
-      case "avi":
-        // AVI does not work well with libx264
-        videoCodec = "mpeg4";
-        audioCodec = "libmp3lame";
-        break;
+    case "avi":
+      videoCodec = "mpeg4";
+      audioCodec = "libmp3lame";
+      break;
 
-      case "webm":
-        videoCodec = "libvpx-vp9";
-        audioCodec = "libopus";
-        break;
+    case "webm":
+      videoCodec = "libvpx-vp9";
+      audioCodec = "libopus";
+      break;
 
-      case "mkv":
-        videoCodec = "libx264";
-        audioCodec = "aac";
-        break;
+    case "mkv":
+      videoCodec = "libx264";
+      audioCodec = "aac";
+      break;
 
-      default:
-        videoCodec = "libx264";
-        audioCodec = "aac";
-    }
+    default:
+      videoCodec = "libx264";
+      audioCodec = "aac";
+  }
 
-    const args = [
-      "-y", // overwrite output
-      "-i", originalVideoPath,
-      "-c:v", videoCodec,
-      "-c:a", audioCodec,
-    ];
+  const args = [
+    "-y",
+    "-i", originalVideoPath,
+    "-c:v", videoCodec,
+    "-c:a", audioCodec,
+  ];
 
-    // VP9 needs CRF mode
-    if (targetFormat.toLowerCase() === "webm") {
-      args.push("-b:v", "0", "-crf", "30");
-    }
+  if (targetFormat.toLowerCase() === "webm") {
+    args.push("-b:v", "0", "-crf", "30");
+  }
 
-    // Set threads
-    args.push("-threads", "2");
+  args.push("-threads", "2");
+  args.push("-loglevel", "error");
+  args.push(targetVideoPath);
 
-    // Error logging only
-    args.push("-loglevel", "error");
-
-    // Output path
-    args.push(targetVideoPath);
-
-    const ffmpeg = spawn("ffmpeg", args);
-
-    ffmpeg.stderr.on("data", (data) => {
-      console.log(data.toString("utf8"));
-    });
-
-    ffmpeg.on("close", (code) => {
-      if (code === 0) {
-        resolve();
-      } else {
-        reject(`FFmpeg exited with this code: ${code}`);
-      }
-    });
-
-    ffmpeg.on("error", (err) => {
-      reject(err);
-    });
+  return runCommand("ffmpeg", args, {
+    onStderr: (data) => { console.error(data.toString("utf8")); }
   });
 };
 
-/**
- * Add text watermark to a video
- * @param {string} originalVideoPath - Source video path
- * @param {string} targetVideoPath - Output video path
- * @param {string} text - Watermark text
- * @param {object} options - Watermark options (x, y, fontSize, fontColor, opacity)
- */
 const watermarkVideo = (originalVideoPath, targetVideoPath, text, options = {}) => {
-  return new Promise((resolve, reject) => {
-    const {
-      x = 10,
-      y = 10,
-      fontSize = 24,
-      fontColor = 'white',
-      opacity = 0.8
-    } = options;
+  const {
+    x = 10,
+    y = 10,
+    fontSize = 24,
+    fontColor = 'white',
+    opacity = 0.8
+  } = options;
 
-    // Escape special characters in text for FFmpeg
-    const escapedText = text.replace(/'/g, "'\\''");
+  const escapedText = text.replace(/'/g, "'\\''");
+  const drawtextFilter = `drawtext=text='${escapedText}':x=${x}:y=${y}:fontsize=${fontSize}:fontcolor=${fontColor}@${opacity}`;
 
-    // Build drawtext filter
-    const drawtextFilter = `drawtext=text='${escapedText}':x=${x}:y=${y}:fontsize=${fontSize}:fontcolor=${fontColor}@${opacity}`;
-
-    // ffmpeg -i input.mp4 -vf "drawtext=..." -codec:a copy output.mp4
-    const ffmpeg = spawn("ffmpeg", [
-      "-i",
-      originalVideoPath,
-      "-vf",
-      drawtextFilter,
-      "-codec:a",
-      "copy",
-      "-threads",
-      "2",
-      "-loglevel",
-      "error",
-      "-y",
-      targetVideoPath,
-    ]);
-
-    ffmpeg.stderr.on("data", (data) => {
-      console.log(data.toString("utf8"));
-    });
-
-    ffmpeg.on("close", (code) => {
-      if (code === 0) {
-        resolve();
-      } else {
-        reject(`FFmpeg exited with this code: ${code}`);
-      }
-    });
-
-    ffmpeg.on("error", (err) => {
-      reject(err);
-    });
+  return runCommand("ffmpeg", [
+    "-i", originalVideoPath,
+    "-vf", drawtextFilter,
+    "-codec:a", "copy",
+    "-threads", "2",
+    "-loglevel", "error",
+    "-y",
+    targetVideoPath,
+  ], {
+    onStderr: (data) => { console.error(data.toString("utf8")); }
   });
 };
 
-/**
- * Add image watermark to a video
- * @param {string} originalVideoPath - Source video path
- * @param {string} watermarkImagePath - Watermark image path
- * @param {string} targetVideoPath - Output video path
- * @param {object} options - Watermark options (position, opacity)
- */
 const addImageWatermark = (originalVideoPath, watermarkImagePath, targetVideoPath, options = {}) => {
-  return new Promise((resolve, reject) => {
-    const {
-      position = 'top-right',
-      opacity = 0.8
-    } = options;
+  const {
+    position = 'top-right',
+    opacity = 0.8
+  } = options;
 
-    // Calculate overlay position based on position option
-    let overlayFilter;
-    switch (position) {
-      case 'top-left':
-        overlayFilter = `overlay=10:10`;
-        break;
-      case 'top-right':
-        overlayFilter = `overlay=main_w-overlay_w-10:10`;
-        break;
-      case 'bottom-left':
-        overlayFilter = `overlay=10:main_h-overlay_h-10`;
-        break;
-      case 'bottom-right':
-        overlayFilter = `overlay=main_w-overlay_w-10:main_h-overlay_h-10`;
-        break;
-      default:
-        overlayFilter = `overlay=main_w-overlay_w-10:10`; // default to top-right
-    }
+  let overlayFilter;
+  switch (position) {
+    case 'top-left': overlayFilter = `overlay=10:10`; break;
+    case 'top-right': overlayFilter = `overlay=main_w-overlay_w-10:10`; break;
+    case 'bottom-left': overlayFilter = `overlay=10:main_h-overlay_h-10`; break;
+    case 'bottom-right': overlayFilter = `overlay=main_w-overlay_w-10:main_h-overlay_h-10`; break;
+    default: overlayFilter = `overlay=main_w-overlay_w-10:10`;
+  }
 
-    // Build filter with opacity
-    const filterComplex = `[1:v]format=rgba,colorchannelmixer=aa=${opacity}[watermark];[0:v][watermark]${overlayFilter}`;
+  const filterComplex = `[1:v]format=rgba,colorchannelmixer=aa=${opacity}[watermark];[0:v][watermark]${overlayFilter}`;
 
-    const ffmpeg = spawn("ffmpeg", [
-      "-i", originalVideoPath,
-      "-i", watermarkImagePath,
-      "-filter_complex", filterComplex,
-      "-codec:a", "copy",
-      "-threads", "2",
-      "-loglevel", "error",
-      "-y",
-      targetVideoPath,
-    ]);
-
-    ffmpeg.stderr.on("data", (data) => {
-      console.log(data.toString("utf8"));
-    });
-
-    ffmpeg.on("close", (code) => {
-      if (code === 0) {
-        resolve();
-      } else {
-        reject(`FFmpeg exited with this code: ${code}`);
-      }
-    });
-
-    ffmpeg.on("error", (err) => {
-      reject(err);
-    });
+  return runCommand("ffmpeg", [
+    "-i", originalVideoPath,
+    "-i", watermarkImagePath,
+    "-filter_complex", filterComplex,
+    "-codec:a", "copy",
+    "-threads", "2",
+    "-loglevel", "error",
+    "-y",
+    targetVideoPath,
+  ], {
+    onStderr: (data) => { console.error(data.toString("utf8")); }
   });
 };
 
-/**
- * Trim a video to specified start and end times
- * @param {string} originalVideoPath - Source video path
- * @param {string} targetVideoPath - Output video path
- * @param {number} startTime - Start time in seconds
- * @param {number} endTime - End time in seconds
- */
 const trimVideo = (originalVideoPath, targetVideoPath, startTime, endTime) => {
-  return new Promise((resolve, reject) => {
-    const duration = endTime - startTime;
+  const duration = endTime - startTime;
 
-    if (duration <= 0) {
-      reject(new Error('End time must be greater than start time'));
-      return;
-    }
+  if (duration <= 0) {
+    return Promise.reject(new Error('End time must be greater than start time'));
+  }
 
-    // ffmpeg -i input.mp4 -ss START_TIME -t DURATION -c copy output.mp4
-    // Using -c copy for fast trimming without re-encoding
-    const ffmpeg = spawn("ffmpeg", [
-      "-i",
-      originalVideoPath,
-      "-ss",
-      startTime.toString(),
-      "-t",
-      duration.toString(),
-      "-c",
-      "copy",
-      "-loglevel",
-      "error",
-      "-y",
-      targetVideoPath,
-    ]);
-
-    ffmpeg.stderr.on("data", (data) => {
-      console.log(data.toString("utf8"));
-    });
-
-    ffmpeg.on("close", (code) => {
-      if (code === 0) {
-        resolve();
-      } else {
-        reject(`FFmpeg exited with this code: ${code}`);
-      }
-    });
-
-    ffmpeg.on("error", (err) => {
-      reject(err);
-    });
-  });
+  return runCommand("ffmpeg", [
+    "-i", originalVideoPath,
+    "-ss", startTime.toString(),
+    "-t", duration.toString(),
+    "-c", "copy",
+    "-loglevel", "error",
+    "-y",
+    targetVideoPath,
+  ]);
 };
 
 const createGif = (originalVideoPath, targetGifPath, options = {}) => {
-  return new Promise((resolve, reject) => {
-    const {
-      fps = 10,
-      width = 320,
-      startTime,
-      duration
-    } = options;
+  const {
+    fps = 10,
+    width = 320,
+    startTime,
+    duration
+  } = options;
 
-    // Build FFmpeg arguments
-    const args = ["-i", originalVideoPath];
+  const args = ["-i", originalVideoPath];
+  if (startTime !== undefined) args.push("-ss", startTime.toString());
+  if (duration !== undefined) args.push("-t", duration.toString());
 
-    // Add start time if specified
-    if (startTime !== undefined) {
-      args.push("-ss", startTime.toString());
-    }
+  args.push(
+    "-vf", `fps=${fps},scale=${width}:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse`,
+    "-loop", "0",
+    "-loglevel", "error",
+    "-y",
+    targetGifPath
+  );
 
-    // Add duration if specified
-    if (duration !== undefined) {
-      args.push("-t", duration.toString());
-    }
-
-    // Add filter for high-quality GIF with palette generation
-    // This creates a custom palette and then uses it for better colors
-    args.push(
-      "-vf",
-      `fps=${fps},scale=${width}:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse`,
-      "-loop",
-      "0", // Loop forever
-      "-loglevel",
-      "error",
-      "-y",
-      targetGifPath
-    );
-
-    const ffmpeg = spawn("ffmpeg", args);
-
-    ffmpeg.stderr.on("data", (data) => {
-      console.log(data.toString("utf8"));
-    });
-
-    ffmpeg.on("close", (code) => {
-      if (code === 0) {
-        resolve();
-      } else {
-        reject(`FFmpeg exited with this code: ${code}`);
-      }
-    });
-
-    ffmpeg.on("error", (err) => {
-      reject(err);
-    });
+  return runCommand("ffmpeg", args, {
+    onStderr: (data) => { console.error(data.toString("utf8")); }
   });
 };
 
-/**
- * Crop an image to specified dimensions and position
- * @param {string} originalImagePath - Source image path
- * @param {string} targetImagePath - Output image path
- * @param {number} width - Crop width
- * @param {number} height - Crop height
- * @param {number} x - X position (default: 0)
- * @param {number} y - Y position (default: 0)
- */
 const cropImage = (originalImagePath, targetImagePath, width, height, x = 0, y = 0) => {
-  return new Promise((resolve, reject) => {
-    // ffmpeg -i input.jpg -vf "crop=width:height:x:y" output.jpg
-    const ffmpeg = spawn("ffmpeg", [
-      "-i",
-      originalImagePath,
-      "-vf",
-      `crop=${width}:${height}:${x}:${y}`,
-      "-threads",
-      "2",
-      "-loglevel",
-      "error",
-      "-y",
-      targetImagePath,
-    ]);
-
-    ffmpeg.stderr.on("data", (data) => {
-      console.log(data.toString("utf8"));
-    });
-
-    ffmpeg.on("close", (code) => {
-      if (code === 0) {
-        resolve();
-      } else {
-        reject(`FFmpeg exited with this code: ${code}`);
-      }
-    });
-
-    ffmpeg.on("error", (err) => {
-      reject(err);
-    });
+  return runCommand("ffmpeg", [
+    "-i", originalImagePath,
+    "-vf", `crop=${width}:${height}:${x}:${y}`,
+    "-threads", "2",
+    "-loglevel", "error",
+    "-y",
+    targetImagePath,
+  ], {
+    timeout: 60000, // 1 minute for image crop
+    onStderr: (data) => { console.error(data.toString("utf8")); }
   });
 };
 
-/**
- * Resize an image to specified dimensions
- * @param {string} originalImagePath - Source image path
- * @param {string} targetImagePath - Output image path
- * @param {number} width - Target width
- * @param {number} height - Target height
- */
 const resizeImage = (originalImagePath, targetImagePath, width, height) => {
-  return new Promise((resolve, reject) => {
-    // ffmpeg -i image.jpg -vf scale=320:240 image-320x240.jpg
-    const ffmpeg = spawn("ffmpeg", [
-      "-i",
-      originalImagePath,
-      "-vf",
-      `scale=${width}:${height}`,
-      "-threads",
-      "2",
-      "-loglevel",
-      "error",
-      "-y",
-      targetImagePath,
-    ]);
-
-    ffmpeg.stderr.on("data", (data) => {
-      console.log(data.toString("utf8"));
-    });
-
-    ffmpeg.on("close", (code) => {
-      if (code === 0) {
-        resolve();
-      } else {
-        reject(`FFmpeg exited with this code: ${code}`);
-      }
-    });
-
-    ffmpeg.on("error", (err) => {
-      reject(err);
-    });
+  return runCommand("ffmpeg", [
+    "-i", originalImagePath,
+    "-vf", `scale=${width}:${height}`,
+    "-threads", "2",
+    "-loglevel", "error",
+    "-y",
+    targetImagePath,
+  ], {
+    timeout: 60000,
+    onStderr: (data) => { console.error(data.toString("utf8")); }
   });
 };
 
-/**
- * Convert an image from one format to another
- * @param {string} originalImagePath - Source image path
- * @param {string} targetImagePath - Output image path
- * @param {string} targetFormat - Target format (jpg, png, webp)
- */
 const convertImageFormat = (originalImagePath, targetImagePath, targetFormat) => {
-  return new Promise((resolve, reject) => {
-    // ffmpeg -i input.png output.jpg
-    const ffmpeg = spawn("ffmpeg", [
-      "-i",
-      originalImagePath,
-      "-loglevel",
-      "error",
-      "-y",
-      targetImagePath,
-    ]);
-
-    ffmpeg.stderr.on("data", (data) => {
-      console.log(data.toString("utf8"));
-    });
-
-    ffmpeg.on("close", (code) => {
-      if (code === 0) {
-        resolve();
-      } else {
-        reject(`FFmpeg exited with this code: ${code}`);
-      }
-    });
-
-    ffmpeg.on("error", (err) => {
-      reject(err);
-    });
+  return runCommand("ffmpeg", [
+    "-i", originalImagePath,
+    "-loglevel", "error",
+    "-y",
+    targetImagePath,
+  ], {
+    timeout: 60000,
+    onStderr: (data) => { console.error(data.toString("utf8")); }
   });
 };
 
@@ -564,4 +323,5 @@ module.exports = {
   cropImage,
   resizeImage,
   convertImageFormat,
+  cleanupProcesses,
 };
