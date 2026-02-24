@@ -23,6 +23,39 @@ A modern, scalable video and image processing platform with a React frontend and
 - **User Authentication** — session-based auth with HttpOnly cookies
 - **Distributed Tracing** — OpenTelemetry integration
 
+## 💰 Billing & Credits
+The platform utilizes a **hardened ledger-first billing system** designed for production reliability.
+
+### Core Invariants
+- **Atomic Transactions**: All credit mutations involve both a ledger entry and a cached balance update in a single atomic database transaction.
+- **Idempotency**: All operations require a `request_id` (UUID) to prevent double-charging on network retries.
+- **State Machine Enforcement**: Database triggers prevent illegal transitions (e.g., refunding a captured charge or double-capturing a reservation).
+- **Immutability**: Ledger entries are protected by database triggers that prevent any `UPDATE` or `DELETE` operations.
+
+### Reservation Lifecycle
+1. **Reserve**: Credits are earmarked and deducted from the user balance when a job is submitted.
+2. **Capture**: Marker is added to the ledger on job success. No balance change occurs.
+3. **Release**: Credits are added back to the balance if a job fails terminally or is cancelled.
+
+## 🛠️ Operational Tools
+
+### Reservation Janitor
+Automated background worker in `apps/worker` that periodically (default 30m) audits the ledger for "stuck" reservations (orphaned jobs or crashed workers) and releases them.
+
+### Reconciliation CLI
+Manual audit and repair tool located in `apps/api/scripts/reconciliation.js`.
+
+```bash
+# Check for balance/ledger drift across all users
+node scripts/reconciliation.js --mode check
+
+# Explain detailed transaction history for a specific user
+node scripts/reconciliation.js --mode explain --userId 123
+
+# Repair drift using non-destructive compensating ledger entries
+node scripts/reconciliation.js --mode repair --userId 123
+```
+
 ---
 
 ## 🏗️ Architecture
