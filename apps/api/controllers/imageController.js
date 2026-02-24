@@ -213,8 +213,11 @@ const cropImage = async (req, res) => {
     const operation = await imageService.addOperation(imageId, {
       type: 'crop',
       status: 'pending',
-      parameters: { x: parseInt(cropX), y: parseInt(cropY), width: parseInt(width), height: parseInt(height) }
+      parameters: { x: parseInt(cropX), y: parseInt(cropY), width: parseInt(cropWidth), height: parseInt(cropHeight) }
     });
+
+    // Reserve credit linked to operationId
+    await userService.reserveCredits(req.userId, 1, `op-${operation.id}`);
 
     // Enqueue job
     if (queue) {
@@ -223,15 +226,12 @@ const cropImage = async (req, res) => {
         imageId,
         x: parseInt(cropX),
         y: parseInt(cropY),
-        width: parseInt(width),
-        height: parseInt(height),
+        width: parseInt(cropWidth),
+        height: parseInt(cropHeight),
         userId: req.userId,
         operationId: operation.id
       });
     }
-
-    // Deduct credit
-    await userService.deductCredits(req.userId, 1, `Cropped image ${imageId} to ${width}x${height}`);
 
     res.status(200).json({
       status: "success",
@@ -272,6 +272,9 @@ const resizeImage = async (req, res) => {
       parameters: { width: parseInt(width), height: parseInt(height) }
     });
 
+    // Reserve credit linked to operationId
+    await userService.reserveCredits(req.userId, 1, `op-${operation.id}`);
+
     // Enqueue job
     if (queue) {
       await queue.enqueue({
@@ -283,9 +286,6 @@ const resizeImage = async (req, res) => {
         operationId: operation.id
       });
     }
-
-    // Deduct credit
-    await userService.deductCredits(req.userId, 1, `Resized image ${imageId} to ${width}x${height}`);
 
     res.status(200).json({
       status: "success",
@@ -339,6 +339,9 @@ const convertImage = async (req, res) => {
       parameters: { targetFormat, originalFormat: image.extension }
     });
 
+    // Reserve credit linked to operationId
+    await userService.reserveCredits(req.userId, 1, `op-${operation.id}`);
+
     // Enqueue job
     if (queue) {
       await queue.enqueue({
@@ -350,9 +353,6 @@ const convertImage = async (req, res) => {
         operationId: operation.id
       });
     }
-
-    // Deduct credit
-    await userService.deductCredits(req.userId, 1, `Converted image ${imageId} to ${targetFormat.toUpperCase()}`);
 
     res.status(200).json({
       status: "success",

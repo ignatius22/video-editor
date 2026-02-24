@@ -28,20 +28,28 @@ const getTransactions = async (req, res) => {
  * POST /api/billing/buy-credits
  */
 const buyCredits = async (req, res) => {
-  const { amount, description = 'Credit purchase' } = req.body;
+  const { amount, description = 'Credit purchase', requestId: bodyRequestId } = req.body;
+  const requestId = req.headers['x-request-id'] || bodyRequestId;
   
   if (!amount || amount <= 0) {
     return res.status(400).json({ error: 'Valid credit amount is required.' });
   }
 
+  if (!requestId) {
+    return res.status(400).json({ error: 'requestId is required for idempotent purchases.' });
+  }
+
   try {
-    const updatedUser = await userService.addCredits(req.userId, amount, description);
+    const updatedUser = await userService.addCredits(req.userId, amount, description, requestId);
     
     res.status(200).json({
-      message: `Successfully purchased ${amount} credits.`,
+      message: `Successfully processed credit purchase.`,
       credits: updatedUser.credits
     });
   } catch (error) {
+    if (error.message.includes('Collision')) {
+      return res.status(409).json({ error: error.message });
+    }
     logger.error({ err: error.message, stack: error.stack, userId: req.userId }, 'Buy credits error');
     res.status(500).json({ error: "Failed to process transaction." });
   }
@@ -52,14 +60,20 @@ const buyCredits = async (req, res) => {
  * POST /api/billing/upgrade
  */
 const upgradeTier = async (req, res) => {
-  const { tier = 'pro' } = req.body;
+  const { tier = 'pro', requestId: bodyRequestId } = req.body;
+  const requestId = req.headers['x-request-id'] || bodyRequestId;
+
+  if (!requestId) {
+    return res.status(400).json({ error: 'requestId is required for idempotent upgrades.' });
+  }
   
   try {
     const updatedUser = await userService.updateTier(req.userId, tier);
     
-    // Add some bonus credits for upgrading
+    // Add some bonus credits for upgrading (using the same requestId for idempotency)
+    // In a real system, the bonus might have its own request_id or be job-linked
     if (tier === 'pro') {
-      await userService.addCredits(req.userId, 50, 'Pro upgrade bonus');
+      await userService.addCredits(req.userId, 50, 'Pro upgrade bonus', `upgrade-${requestId}`);
     }
 
     res.status(200).json({
