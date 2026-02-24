@@ -29,11 +29,33 @@ export const login = (username, password) =>
     body: JSON.stringify({ username, password }),
   });
 
+export const register = (username, email, password) =>
+  request('/auth/register', {
+    method: 'POST',
+    body: JSON.stringify({ username, email, password }),
+  });
+
 export const logout = () =>
   request('/auth/logout', { method: 'POST' });
 
 export const getUser = () =>
   request('/auth/user');
+
+// Billing
+export const getTransactions = (limit = 50, offset = 0) =>
+  request(`/billing/transactions?limit=${limit}&offset=${offset}`);
+
+export const buyCredits = (amount, description) =>
+  request('/billing/buy-credits', {
+    method: 'POST',
+    body: JSON.stringify({ amount, description }),
+  });
+
+export const upgradeTier = (tier = 'pro') =>
+  request('/billing/upgrade', {
+    method: 'POST',
+    body: JSON.stringify({ tier }),
+  });
 
 // Videos
 export const getVideos = () =>

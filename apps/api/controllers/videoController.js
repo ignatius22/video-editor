@@ -10,6 +10,7 @@ const videoService = require("@video-editor/shared/database/services/videoServic
 const FFOriginal = require("@video-editor/shared/lib/FF");
 const util = require("@video-editor/shared/lib/util");
 const telemetry = require("@video-editor/shared/telemetry");
+const userService = require("@video-editor/shared/database/services/userService");
 
 // Use instrumented FF module if telemetry is enabled
 const FF = telemetry.config.enabled
@@ -57,6 +58,18 @@ const uploadVideo = async (req, res) => {
   const extension = path.extname(specifiedFileName).substring(1).toLowerCase();
   const name = path.parse(specifiedFileName).name;
   const videoId = crypto.randomBytes(4).toString("hex");
+
+  // Tier-based size limits
+  const isPro = req.user && req.user.tier === 'pro';
+  const sizeLimit = isPro ? 500 * 1024 * 1024 : 50 * 1024 * 1024; // 500MB for Pro, 50MB for Free
+  
+  if (req.body.length > sizeLimit) {
+    return res.status(400).json({
+      error: `File size too large for your ${req.user.tier} plan. Max: ${isPro ? '500MB' : '50MB'}.`,
+      limit: sizeLimit,
+      actual: req.body.length
+    });
+  }
 
   const FORMATS_SUPPORTED = ["mov", "mp4"];
   if (!FORMATS_SUPPORTED.includes(extension)) {
@@ -151,6 +164,9 @@ const extractAudio = async (req, res) => {
       metadata: { ...video.metadata, extractedAudio: true }
     });
 
+    // Deduct credit
+    await userService.deductCredits(req.userId, 1, `Extracted audio from video ${videoId}`);
+
     res.status(200).json({
       status: "success",
       message: "Audio extracted successfully!"
@@ -203,6 +219,9 @@ const resizeVideo = async (req, res) => {
         userId: req.userId
       });
     }
+
+    // Deduct credit
+    await userService.deductCredits(req.userId, 1, `Resized video ${videoId} to ${width}x${height}`);
 
     res.status(200).json({
       status: "success",
@@ -270,6 +289,9 @@ const convertVideo = async (req, res) => {
         userId: req.userId
       });
     }
+
+    // Deduct credit
+    await userService.deductCredits(req.userId, 1, `Converted video ${videoId} to ${targetFormat.toUpperCase()}`);
 
     res.status(200).json({
       status: "success",

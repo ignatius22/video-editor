@@ -18,9 +18,9 @@ class UserService {
     const password_hash = await bcrypt.hash(password, SALT_ROUNDS);
 
     const result = await query(
-      `INSERT INTO users (username, email, password_hash, tier)
-       VALUES ($1, $2, $3, $4)
-       RETURNING id, username, email, tier, created_at`,
+      `INSERT INTO users (username, email, password_hash, tier, credits)
+       VALUES ($1, $2, $3, $4, 10)
+       RETURNING id, username, email, tier, credits, is_admin, created_at`,
       [username, email, password_hash, tier]
     );
 
@@ -34,7 +34,7 @@ class UserService {
    */
   async findById(id) {
     const result = await query(
-      'SELECT id, username, email, tier, created_at, updated_at FROM users WHERE id = $1',
+      'SELECT id, username, email, tier, credits, is_admin, created_at, updated_at FROM users WHERE id = $1',
       [id]
     );
 
@@ -48,7 +48,7 @@ class UserService {
    */
   async findByUsername(username) {
     const result = await query(
-      'SELECT id, username, email, tier, created_at, updated_at FROM users WHERE username = $1',
+      'SELECT id, username, email, tier, credits, is_admin, created_at, updated_at FROM users WHERE username = $1',
       [username]
     );
 
@@ -62,7 +62,7 @@ class UserService {
    */
   async findByEmail(email) {
     const result = await query(
-      'SELECT id, username, email, tier, created_at, updated_at FROM users WHERE email = $1',
+      'SELECT id, username, email, tier, credits, is_admin, created_at, updated_at FROM users WHERE email = $1',
       [email]
     );
 
@@ -161,6 +161,74 @@ class UserService {
   }
 
   /**
+   * Deduct credits from user
+   * @param {number} userId - User ID
+   * @param {number} amount - Amount to deduct
+   * @param {string} description - Transaction description
+   * @returns {Promise<object>} Updated user
+   */
+  async deductCredits(userId, amount, description = 'Operation deduction') {
+    return await transaction(async (client) => {
+      // 1. Get current credits
+      const userRes = await client.query('SELECT credits FROM users WHERE id = $1 FOR UPDATE', [userId]);
+      const user = userRes.rows[0];
+
+      if (!user) throw new Error('User not found');
+      if (user.credits < amount) throw new Error('Insufficient credits');
+
+      // 2. Deduct credits
+      const result = await client.query(
+        'UPDATE users SET credits = credits - $1 WHERE id = $2 RETURNING id, credits',
+        [amount, userId]
+      );
+
+      // 3. Record transaction
+      await client.query(
+        'INSERT INTO credit_transactions (user_id, amount, type, description) VALUES ($1, $2, $3, $4)',
+        [userId, -amount, 'deduction', description]
+      );
+
+      return result.rows[0];
+    });
+  }
+
+  /**
+   * Add credits to user
+   * @param {number} userId - User ID
+   * @param {number} amount - Amount to add
+   * @param {string} description - Transaction description
+   * @returns {Promise<object>} Updated user
+   */
+  async addCredits(userId, amount, description = 'Credit top-up') {
+    return await transaction(async (client) => {
+      const result = await client.query(
+        'UPDATE users SET credits = credits + $1 WHERE id = $2 RETURNING id, credits',
+        [amount, userId]
+      );
+
+      await client.query(
+        'INSERT INTO credit_transactions (user_id, amount, type, description) VALUES ($1, $2, $3, $4)',
+        [userId, amount, 'addition', description]
+      );
+
+      return result.rows[0];
+    });
+  }
+
+  /**
+   * Get user credit transactions
+   * @param {number} userId - User ID
+   * @returns {Promise<array>} List of transactions
+   */
+  async getCreditTransactions(userId, limit = 50, offset = 0) {
+    const result = await query(
+      'SELECT * FROM credit_transactions WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3',
+      [userId, limit, offset]
+    );
+    return result.rows;
+  }
+
+  /**
    * Get user statistics
    * @param {number} userId - User ID
    * @returns {Promise<object>} User statistics
@@ -196,6 +264,26 @@ class UserService {
     );
 
     return result.rows;
+  }
+
+  /**
+   * Update user tier
+   * @param {number} userId - User ID
+   * @param {string} tier - New tier ('free', 'pro')
+   * @returns {Promise<object>} Updated user
+   */
+  async updateTier(userId, tier) {
+    const allowedTiers = ['free', 'pro'];
+    if (!allowedTiers.includes(tier)) {
+      throw new Error(`Invalid tier: ${tier}. Allowed: ${allowedTiers.join(', ')}`);
+    }
+
+    const result = await query(
+      'UPDATE users SET tier = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING id, username, email, tier, credits, is_admin, updated_at',
+      [tier, userId]
+    );
+
+    return result.rows[0];
   }
 }
 

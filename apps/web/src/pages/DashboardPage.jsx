@@ -9,6 +9,7 @@ import OperationModal from '@/components/OperationModal';
 import CropModal from '@/components/CropModal';
 import { useSocket } from '@/hooks/useSocket';
 import { Toaster, toast } from 'sonner';
+import { useAuth } from '@/context/AuthContext';
 import * as api from '@/api/client';
 
 export default function DashboardPage() {
@@ -29,6 +30,9 @@ export default function DashboardPage() {
   // Crop modal
   const [cropOpen, setCropOpen] = useState(false);
   const [cropTarget, setCropTarget] = useState(null);
+
+  // Auth
+  const { refreshUser } = useAuth();
 
   // WebSocket
   const { jobs, subscribe } = useSocket();
@@ -62,8 +66,10 @@ export default function DashboardPage() {
       if (job.event === 'completed') {
         toast.success('Processing complete', { description: `Job for ${id} finished.` });
         fetchData();
+        refreshUser();
       } else if (job.event === 'failed') {
         toast.error('Processing failed', { description: job.error || `Job for ${id} failed.` });
+        refreshUser();
       }
     });
   }, [jobs, fetchData]);
@@ -95,6 +101,7 @@ export default function DashboardPage() {
     toast.success('Crop job started', { description: 'Processing has begun.' });
     subscribe(id);
     fetchData();
+    refreshUser();
   };
 
   const handleOperationSubmit = async (values) => {
@@ -124,6 +131,7 @@ export default function DashboardPage() {
     toast.success('Job started', { description: 'Processing has begun. You\'ll see progress updates below.' });
     subscribe(id);
     fetchData();
+    refreshUser();
   };
 
   const openUpload = (type) => {
