@@ -17,14 +17,24 @@ class UserService {
     // Hash password
     const password_hash = await bcrypt.hash(password, SALT_ROUNDS);
 
-    const result = await query(
-      `INSERT INTO users (username, email, password_hash, tier, credits)
-       VALUES ($1, $2, $3, $4, 10)
-       RETURNING id, username, email, tier, credits, is_admin, created_at`,
-      [username, email, password_hash, tier]
-    );
+    return await transaction(async (client) => {
+      const result = await client.query(
+        `INSERT INTO users (username, email, password_hash, tier, credits)
+         VALUES ($1, $2, $3, $4, 10)
+         RETURNING id, username, email, tier, credits, is_admin, created_at`,
+        [username, email, password_hash, tier]
+      );
 
-    return result.rows[0];
+      const user = result.rows[0];
+
+      // Record initial sign-up bonus in ledger
+      await client.query(
+        'INSERT INTO credit_transactions (user_id, amount, type, description) VALUES ($1, $2, $3, $4)',
+        [user.id, 10, 'addition', 'Sign-up bonus']
+      );
+
+      return user;
+    });
   }
 
   /**
@@ -167,7 +177,7 @@ class UserService {
    * @param {string} description - Transaction description
    * @returns {Promise<object>} Updated user
    */
-  async deductCredits(userId, amount, description = 'Operation deduction') {
+  async deductCredits(userId, amount, description = 'Operation deduction', operationId = null, requestId = null) {
     return await transaction(async (client) => {
       // 1. Get current credits
       const userRes = await client.query('SELECT credits FROM users WHERE id = $1 FOR UPDATE', [userId]);
@@ -182,10 +192,10 @@ class UserService {
         [amount, userId]
       );
 
-      // 3. Record transaction
+      // 3. Record transaction with optional operational/request links
       await client.query(
-        'INSERT INTO credit_transactions (user_id, amount, type, description) VALUES ($1, $2, $3, $4)',
-        [userId, -amount, 'deduction', description]
+        'INSERT INTO credit_transactions (user_id, amount, type, description, operation_id, request_id) VALUES ($1, $2, $3, $4, $5, $6)',
+        [userId, -amount, 'deduction', description, operationId, requestId]
       );
 
       return result.rows[0];
@@ -199,19 +209,45 @@ class UserService {
    * @param {string} description - Transaction description
    * @returns {Promise<object>} Updated user
    */
-  async addCredits(userId, amount, description = 'Credit top-up') {
+  async addCredits(userId, amount, description = 'Credit top-up', requestId = null) {
     return await transaction(async (client) => {
-      const result = await client.query(
-        'UPDATE users SET credits = credits + $1 WHERE id = $2 RETURNING id, credits',
-        [amount, userId]
-      );
+      try {
+        // Idempotency check: If a requestId is provided, check if it already exists
+        if (requestId) {
+          const existing = await client.query(
+            'SELECT user_id, amount FROM credit_transactions WHERE request_id = $1',
+            [requestId]
+          );
+          if (existing.rows.length > 0) {
+            // Validate that the request belongs to the same user
+            if (existing.rows[0].user_id !== userId) {
+              throw new Error('Collision: Request ID already used by another user');
+            }
+            // Return current balance without double-crediting
+            const current = await client.query('SELECT id, credits FROM users WHERE id = $1', [userId]);
+            return current.rows[0];
+          }
+        }
 
-      await client.query(
-        'INSERT INTO credit_transactions (user_id, amount, type, description) VALUES ($1, $2, $3, $4)',
-        [userId, amount, 'addition', description]
-      );
+        const result = await client.query(
+          'UPDATE users SET credits = credits + $1 WHERE id = $2 RETURNING id, credits',
+          [amount, userId]
+        );
 
-      return result.rows[0];
+        await client.query(
+          'INSERT INTO credit_transactions (user_id, amount, type, description, request_id) VALUES ($1, $2, $3, $4, $5)',
+          [userId, amount, 'addition', description, requestId]
+        );
+
+        return result.rows[0];
+      } catch (err) {
+        // Postgres unique violation code 23505
+        if (err.code === '23505' && requestId) {
+          const current = await client.query('SELECT id, credits FROM users WHERE id = $1', [userId]);
+          return current.rows[0];
+        }
+        throw err;
+      }
     });
   }
 
@@ -229,23 +265,121 @@ class UserService {
   }
 
   /**
-   * Get user statistics
+   * Reserve credits for an operation
    * @param {number} userId - User ID
-   * @returns {Promise<object>} User statistics
+   * @param {number} amount - Amount to reserve
+   * @param {string} operationId - Linked operation ID
+   * @returns {Promise<object>} Updated user
    */
-  async getUserStats(userId) {
-    const result = await query(
-      'SELECT * FROM get_user_stats($1)',
-      [userId]
-    );
+  async reserveCredits(userId, amount, operationId) {
+    if (!operationId) throw new Error('operationId is required for reservations');
+    
+    return await transaction(async (client) => {
+      // 1. Idempotency check: Has this operation already been reserved/captured?
+      const existing = await client.query(
+        'SELECT type FROM credit_transactions WHERE operation_id = $1 AND type IN (\'reservation\', \'debit_capture\')',
+        [operationId]
+      );
+      if (existing.rows.length > 0) {
+        const current = await client.query('SELECT credits FROM users WHERE id = $1', [userId]);
+        return current.rows[0];
+      }
 
-    return result.rows[0] || {
-      total_videos: 0,
-      total_jobs: 0,
-      completed_jobs: 0,
-      failed_jobs: 0,
-      avg_job_duration: 0
-    };
+      // 2. Resource check & Lock
+      const userRes = await client.query('SELECT credits FROM users WHERE id = $1 FOR UPDATE', [userId]);
+      const user = userRes.rows[0];
+      if (!user) throw new Error('User not found');
+      if (user.credits < amount) throw new Error('Insufficient credits');
+
+      // 3. Deduct available balance
+      const result = await client.query(
+        'UPDATE users SET credits = credits - $1 WHERE id = $2 RETURNING id, credits',
+        [amount, userId]
+      );
+
+      // 4. Create reservation ledger entry
+      await client.query(
+        'INSERT INTO credit_transactions (user_id, amount, type, description, operation_id) VALUES ($1, $2, $3, $4, $5)',
+        [userId, -amount, 'reservation', `Reserved for operation ${operationId}`, operationId]
+      );
+
+      return result.rows[0];
+    });
+  }
+
+  /**
+   * Capture reserved credits on success
+   * @param {string} operationId - Linked operation ID
+   * @returns {Promise<boolean>} Success status
+   */
+  async captureCredits(operationId) {
+    return await transaction(async (client) => {
+      // 1. Check if already captured (idempotency)
+      const existing = await client.query(
+        'SELECT id FROM credit_transactions WHERE operation_id = $1 AND type = \'debit_capture\'',
+        [operationId]
+      );
+      if (existing.rows.length > 0) return true;
+
+      // 2. Find the reservation
+      const res = await client.query(
+        'SELECT id, user_id, amount, description FROM credit_transactions WHERE operation_id = $1 AND type = \'reservation\'',
+        [operationId]
+      );
+      if (res.rows.length === 0) {
+        throw new Error(`Capture failure: No reservation found for operation ${operationId}`);
+      }
+
+      const reservation = res.rows[0];
+
+      // 3. Create capture entry (Balance not updated, it was lowered at reservation)
+      await client.query(
+        'INSERT INTO credit_transactions (user_id, amount, type, description, operation_id) VALUES ($1, $2, $3, $4, $5)',
+        [reservation.user_id, reservation.amount, 'debit_capture', `Captured for operation ${operationId}`, operationId]
+      );
+
+      return true;
+    });
+  }
+
+  /**
+   * Release reserved credits on failure
+   * @param {string} operationId - Linked operation ID
+   * @returns {Promise<object|null>} Updated user or null if nothing to release
+   */
+  async releaseCredits(operationId) {
+    return await transaction(async (client) => {
+      // 1. Double-release check: Has it already been captured or released?
+      const existing = await client.query(
+        'SELECT type FROM credit_transactions WHERE operation_id = $1 AND type IN (\'debit_capture\', \'refund\')',
+        [operationId]
+      );
+      if (existing.rows.length > 0) return null;
+
+      // 2. Find the reservation
+      const res = await client.query(
+        'SELECT user_id, amount FROM credit_transactions WHERE operation_id = $1 AND type = \'reservation\'',
+        [operationId]
+      );
+      if (res.rows.length === 0) return null;
+
+      const reservation = res.rows[0];
+      const refundAmount = Math.abs(reservation.amount);
+
+      // 3. Restore balance
+      const result = await client.query(
+        'UPDATE users SET credits = credits + $1 WHERE id = $2 RETURNING id, credits',
+        [refundAmount, reservation.user_id]
+      );
+
+      // 4. Record refund
+      await client.query(
+        'INSERT INTO credit_transactions (user_id, amount, type, description, operation_id) VALUES ($1, $2, $3, $4, $5)',
+        [reservation.user_id, refundAmount, 'refund', `Refunded for failed operation ${operationId}`, operationId]
+      );
+
+      return result.rows[0];
+    });
   }
 
   /**

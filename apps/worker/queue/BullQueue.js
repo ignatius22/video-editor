@@ -6,6 +6,7 @@ const FFOriginal = require('@video-editor/shared/lib/FF');
 const util = require('@video-editor/shared/lib/util');
 const config = require('@video-editor/shared/config');
 const telemetry = require('@video-editor/shared/telemetry');
+const userService = require('@video-editor/shared/database/services/userService');
 const createLogger = require('@video-editor/shared/lib/logger');
 const logger = createLogger('queue');
 
@@ -131,8 +132,11 @@ class BullQueue extends EventEmitter {
         if (operationId) {
           try {
             await service.updateOperationStatus(operationId, 'failed', null, `Failed after ${job.attemptsMade} attempts: ${err}`);
+            
+            // Release/Refund credits on terminal failure
+            await userService.releaseCredits(`op-${operationId}`);
           } catch (dbErr) {
-            logger.error({ dbErr, jobId }, 'Failed to update terminal failure status in database');
+            logger.error({ dbErr, jobId }, 'Failed to update terminal failure status or release credits');
           }
         }
       } else {
@@ -192,7 +196,7 @@ class BullQueue extends EventEmitter {
 
     this.queue.on('global:completed', (jobId, result) => {
       // Job completed successfully
-      this.queue.getJob(jobId).then(job => {
+      this.queue.getJob(jobId).then(async job => {
         if (job) {
           const completedAt = new Date().toISOString();
           const queuedAt = new Date(job.timestamp).toISOString();
@@ -208,6 +212,18 @@ class BullQueue extends EventEmitter {
             completedAt,
             duration: job.finishedOn - job.processedOn
           });
+
+          // Capture credits on success
+          if (job.data.operationId) {
+            try {
+              await userService.captureCredits(`op-${job.data.operationId}`);
+            } catch (err) {
+              logger.error({ err, jobId: job.id, operationId: job.data.operationId }, 'Failed to capture credits on job completion');
+            }
+          } else if (job.name === 'extract-audio' || job.name === 'resize' || job.name === 'convert') {
+            // Fallback for sync or legacy jobs that might use different ID formats
+            // (In this refactor, all async jobs should have operationId)
+          }
         }
       });
     });

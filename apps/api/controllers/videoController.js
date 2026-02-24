@@ -221,20 +221,30 @@ const extractAudio = async (req, res) => {
     const originalVideoPath = `./storage/${videoId}/original.${video.extension}`;
     const targetAudioPath = `./storage/${videoId}/audio.aac`;
 
-    await FF.extractAudio(originalVideoPath, targetAudioPath);
+    // 1. Reserve credit (Synchronous operations capture immediately after)
+    const requestId = `sync-audio-${videoId}-${Date.now()}`;
+    await userService.reserveCredits(req.userId, 1, requestId);
 
-    // Update metadata
-    await videoService.updateVideo(videoId, {
-      metadata: { ...video.metadata, extractedAudio: true }
-    });
+    try {
+      await FF.extractAudio(originalVideoPath, targetAudioPath);
 
-    // Deduct credit
-    await userService.deductCredits(req.userId, 1, `Extracted audio from video ${videoId}`);
+      // Update metadata
+      await videoService.updateVideo(videoId, {
+        metadata: { ...video.metadata, extractedAudio: true }
+      });
 
-    res.status(200).json({
-      status: "success",
-      message: "Audio extracted successfully!"
-    });
+      // 2. Capture credit on success
+      await userService.captureCredits(requestId);
+
+      res.status(200).json({
+        status: "success",
+        message: "Audio extracted successfully!"
+      });
+    } catch (err) {
+      // 3. Release on failure
+      await userService.releaseCredits(requestId);
+      throw err;
+    }
   } catch (error) {
     logger.error({ err: error.message, stack: error.stack, userId: req.userId, videoId }, "Extract audio error");
     res.status(500).json({ error: "Audio extraction failed." });
@@ -270,6 +280,9 @@ const resizeVideo = async (req, res) => {
       parameters: { width: parseInt(width), height: parseInt(height) }
     });
 
+    // Reserve credit linked to operationId
+    await userService.reserveCredits(req.userId, 1, `op-${operation.id}`);
+
     // Enqueue job
     if (queue) {
       await queue.enqueue({
@@ -281,9 +294,6 @@ const resizeVideo = async (req, res) => {
         operationId: operation.id
       });
     }
-
-    // Deduct credit
-    await userService.deductCredits(req.userId, 1, `Resized video ${videoId} to ${width}x${height}`);
 
     res.status(200).json({
       status: "success",
@@ -338,6 +348,9 @@ const convertVideo = async (req, res) => {
       parameters: { targetFormat, originalFormat: video.extension }
     });
 
+    // Reserve credit linked to operationId
+    await userService.reserveCredits(req.userId, 1, `op-${operation.id}`);
+
     // Enqueue job
     if (queue) {
       await queue.enqueue({
@@ -349,9 +362,6 @@ const convertVideo = async (req, res) => {
         operationId: operation.id
       });
     }
-
-    // Deduct credit
-    await userService.deductCredits(req.userId, 1, `Converted video ${videoId} to ${targetFormat.toUpperCase()}`);
 
     res.status(200).json({
       status: "success",
