@@ -425,10 +425,11 @@ class BullQueue extends EventEmitter {
 
           return JSON.stringify({ width, height, outputPath: targetVideoPath });
         } catch (error) {
-          // NOTE: We no longer update the operation status to 'failed' here.
-          // The consolidated 'global:failed' handler in setupFailureHandling()
-          // will do this ONLY after all retry attempts are exhausted.
-
+          if (error.message.includes('Process timed out')) {
+            logger.error({ videoId, timeout: true }, "Resize operation timed out");
+          } else {
+            logger.error({ err: error.message, stack: error.stack, videoId }, "Resize operation failed");
+          }
           util.deleteFile(targetVideoPath);
           throw error;
         }
@@ -493,7 +494,11 @@ class BullQueue extends EventEmitter {
 
           return JSON.stringify({ targetFormat, outputPath: convertedPath });
         } catch (error) {
-          logger.error({ err: error.message, stack: error.stack, videoId }, "Video conversion failed");
+          if (error.message.includes('Process timed out')) {
+            logger.error({ videoId, timeout: true, targetFormat }, "Video conversion timed out");
+          } else {
+            logger.error({ err: error.message, stack: error.stack, videoId }, "Video conversion failed");
+          }
           util.deleteFile(convertedPath);
           throw error;
         }
@@ -553,7 +558,11 @@ class BullQueue extends EventEmitter {
 
           return JSON.stringify({ width, height, x, y, outputPath: targetImagePath });
         } catch (error) {
-          logger.error({ err: error.message, stack: error.stack, imageId }, "Image crop failed");
+          if (error.message.includes('Process timed out')) {
+            logger.error({ imageId, timeout: true }, "Image crop timed out");
+          } else {
+            logger.error({ err: error.message, stack: error.stack, imageId }, "Image crop failed");
+          }
           util.deleteFile(targetImagePath);
           throw error;
         }
@@ -612,7 +621,11 @@ class BullQueue extends EventEmitter {
 
           return JSON.stringify({ width, height, outputPath: targetImagePath });
         } catch (error) {
-          logger.error({ err: error.message, stack: error.stack, imageId }, "Image resize failed");
+          if (error.message.includes('Process timed out')) {
+            logger.error({ imageId, timeout: true }, "Image resize timed out");
+          } else {
+            logger.error({ err: error.message, stack: error.stack, imageId }, "Image resize failed");
+          }
           util.deleteFile(targetImagePath);
           throw error;
         }
@@ -674,7 +687,11 @@ class BullQueue extends EventEmitter {
 
           return JSON.stringify({ targetFormat, outputPath: targetImagePath });
         } catch (error) {
-          logger.error({ err: error.message, stack: error.stack, imageId }, "Image conversion failed");
+          if (error.message.includes('Process timed out')) {
+            logger.error({ imageId, timeout: true, targetFormat }, "Image conversion timed out");
+          } else {
+            logger.error({ err: error.message, stack: error.stack, imageId }, "Image conversion failed");
+          }
           util.deleteFile(targetImagePath);
           throw error;
         }
