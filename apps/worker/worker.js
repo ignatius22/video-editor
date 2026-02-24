@@ -38,16 +38,29 @@ async function start() {
 
     // Start periodic storage cleanup (run every 1 hour)
     const storagePruner = require('./lib/cleanup');
-    // Run once at startup
+    const ReservationJanitor = require('./lib/reservationJanitor');
+    const janitor = new ReservationJanitor(queue, { ttlMinutes: 30 });
+
+    // Run cleanups once at startup
     storagePruner.run().catch(err => logger.error({ err: err.message }, 'Initial storage cleanup failed'));
+    janitor.run().catch(err => logger.error({ err: err.message }, 'Initial reservation janitor failed'));
     
-    // Set interval for subsequent runs
-    const CLEANUP_INTERVAL = 60 * 60 * 1000; // 1 hour
+    // Set intervals for subsequent runs
+    const STORAGE_CLEANUP_INTERVAL = 60 * 60 * 1000; // 1 hour
+    const JANITOR_INTERVAL = 30 * 60 * 1000; // 30 minutes
+
     setInterval(() => {
       storagePruner.run().catch(err => logger.error({ err: err.message }, 'Periodic storage cleanup failed'));
-    }, CLEANUP_INTERVAL);
+    }, STORAGE_CLEANUP_INTERVAL);
 
-    logger.info({ intervalMs: CLEANUP_INTERVAL }, 'Storage cleanup task scheduled');
+    setInterval(() => {
+      janitor.run().catch(err => logger.error({ err: err.message }, 'Periodic reservation janitor failed'));
+    }, JANITOR_INTERVAL);
+
+    logger.info({ 
+      storageIntervalMs: STORAGE_CLEANUP_INTERVAL,
+      janitorIntervalMs: JANITOR_INTERVAL 
+    }, 'Background maintenance tasks scheduled');
 
   } catch (error) {
     logger.error({ err: error.message, stack: error.stack }, 'FAILED TO START WORKER');
