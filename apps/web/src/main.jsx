@@ -7,6 +7,8 @@ import RegisterPage from '@/pages/RegisterPage';
 import DashboardPage from '@/pages/DashboardPage';
 import BillingPage from '@/pages/BillingPage';
 import ProfilePage from '@/pages/ProfilePage';
+import AdminDashboardPage from '@/pages/AdminDashboardPage';
+import AdminAnalyticsPage from '@/pages/AdminAnalyticsPage';
 import './index.css';
 
 function ProtectedRoute({ children }) {
@@ -21,6 +23,22 @@ function ProtectedRoute({ children }) {
   }
 
   if (!user) return <Navigate to="/login" replace />;
+  return children;
+}
+
+function AdminRoute({ children }) {
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+      </div>
+    );
+  }
+
+  if (!user) return <Navigate to="/login" replace />;
+  if (!user.is_admin) return <Navigate to="/" replace />;
   return children;
 }
 
@@ -82,6 +100,22 @@ createRoot(document.getElementById('root')).render(
               <ProtectedRoute>
                 <ProfilePage />
               </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin"
+            element={
+              <AdminRoute>
+                <AdminDashboardPage />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="/admin/analytics"
+            element={
+              <AdminRoute>
+                <AdminAnalyticsPage />
+              </AdminRoute>
             }
           />
           <Route path="*" element={<Navigate to="/" replace />} />

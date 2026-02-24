@@ -124,7 +124,7 @@ export default function BillingPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-12">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-12 items-start">
         {/* Buy Credits Card */}
         <div className="lg:col-span-2 space-y-6">
           <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden shadow-xl">
@@ -179,16 +179,16 @@ export default function BillingPage() {
                 Refresh
               </button>
             </div>
-            <div className="overflow-x-auto min-h-[300px] transition-all">
+            <div className="overflow-x-auto max-h-[280px] overflow-y-auto relative transition-all custom-scrollbar">
               {loading && transactions.length === 0 ? (
-                <div className="p-12 flex flex-col items-center justify-center gap-4 text-zinc-500">
+                <div className="p-12 flex flex-col items-center justify-center gap-4 text-zinc-500 min-h-[300px]">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-500"></div>
                   <p className="text-sm font-medium animate-pulse">Loading history...</p>
                 </div>
               ) : transactions.length > 0 ? (
                 <div className={isRefreshing ? 'opacity-40 pointer-events-none transition-opacity duration-300' : 'opacity-100 transition-opacity duration-300'}>
                   <table className="w-full text-left">
-                    <thead>
+                    <thead className="sticky top-0 z-10 bg-zinc-900 shadow-[0_1px_0_0_rgba(255,255,255,0.05)]">
                       <tr className="bg-zinc-800/30 text-xs text-zinc-400 border-b border-zinc-800">
                         <th className="px-6 py-4 font-semibold">Date</th>
                         <th className="px-6 py-4 font-semibold">Description</th>
@@ -225,7 +225,7 @@ export default function BillingPage() {
                 </table>
               </div>
             ) : (
-                <div className="p-12 text-center text-zinc-500">
+                <div className="p-12 text-center text-zinc-500 min-h-[300px] flex flex-col items-center justify-center">
                   <TrendingUp className="w-12 h-12 mx-auto mb-4 opacity-20" />
                   <p>No transactions found. Your history will appear here.</p>
                 </div>
@@ -236,7 +236,7 @@ export default function BillingPage() {
 
         {/* Upgrade Card */}
         <div className="space-y-6">
-          <div className={`bg-zinc-900 border ${user?.tier === 'pro' ? 'border-indigo-500/50' : 'border-zinc-800'} rounded-2xl overflow-hidden shadow-xl flex flex-col h-full sticky top-8`}>
+          <div className={`bg-zinc-900 border ${user?.tier === 'pro' ? 'border-indigo-500/50' : 'border-zinc-800'} rounded-2xl overflow-hidden shadow-xl flex flex-col sticky top-8`}>
             {user?.tier === 'pro' && (
               <div className="bg-indigo-600 px-4 py-1 text-center text-[10px] font-bold uppercase tracking-widest">
                 Current Plan

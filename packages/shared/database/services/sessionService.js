@@ -34,7 +34,7 @@ class SessionService {
   async findByToken(token) {
     const result = await query(
       `SELECT s.id, s.user_id, s.token, s.created_at, s.expires_at,
-              u.username, u.email, u.tier
+              u.username, u.email, u.tier, u.is_admin
        FROM sessions s
        JOIN users u ON s.user_id = u.id
        WHERE s.token = $1 AND s.expires_at > CURRENT_TIMESTAMP`,
@@ -61,7 +61,8 @@ class SessionService {
       id: session.user_id,
       username: session.username,
       email: session.email,
-      tier: session.tier
+      tier: session.tier,
+      is_admin: session.is_admin
     };
   }
 

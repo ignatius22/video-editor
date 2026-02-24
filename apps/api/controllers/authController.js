@@ -141,6 +141,7 @@ const getUserInfo = async (req, res) => {
       email: user.email,
       tier: user.tier,
       credits: user.credits,
+      is_admin: user.is_admin,
       created_at: user.created_at
     });
   } catch (error) {

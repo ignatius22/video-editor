@@ -1,7 +1,7 @@
 import React from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
-import { LogOut, User, Zap, CreditCard, LayoutDashboard } from 'lucide-react';
+import { LogOut, User, Zap, CreditCard, LayoutDashboard, ShieldCheck } from 'lucide-react';
 
 export default function Navbar() {
   const { user, logout } = useAuth();
@@ -33,6 +33,12 @@ export default function Navbar() {
             <CreditCard className="w-4 h-4" />
             Billing
           </Link>
+          {user.is_admin && (
+            <Link to="/admin" className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-indigo-400 hover:text-indigo-300 hover:bg-indigo-500/10 rounded-lg transition-all duration-200">
+              <ShieldCheck className="w-4 h-4" />
+              Admin
+            </Link>
+          )}
         </div>
       </div>
 

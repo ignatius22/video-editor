@@ -46,4 +46,15 @@ const authenticate = async (req, res, next) => {
   }
 };
 
-module.exports = { authenticate };
+/**
+ * Admin Only Middleware
+ * Ensures the authenticated user has admin privileges
+ */
+const adminOnly = (req, res, next) => {
+  if (!req.user || !req.user.is_admin) {
+    return res.status(403).json({ error: "Forbidden: Administrative access required." });
+  }
+  next();
+};
+
+module.exports = { authenticate, adminOnly };

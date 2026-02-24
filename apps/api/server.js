@@ -13,8 +13,16 @@ const authRoutes = require('./routes/authRoutes');
 const videoRoutes = require('./routes/videoRoutes');
 const imageRoutes = require('./routes/imageRoutes');
 const billingRoutes = require('./routes/billingRoutes');
-const { authenticate } = require('./middleware/auth');
+const adminRoutes = require('./routes/adminRoutes');
+const { authenticate, adminOnly } = require('./middleware/auth');
 const errorHandler = require('./middleware/errorHandler');
+const { 
+  helmetConfig, 
+  globalLimiter, 
+  authLimiter, 
+  processingLimiter, 
+  csrfProtection 
+} = require('./middleware/security');
 const videoController = require('./controllers/videoController');
 const imageController = require('./controllers/imageController');
 
@@ -31,13 +39,16 @@ const io = socketIO(server, {
   }
 });
 
-// Middleware
+// Security & Global Middleware
+app.use(helmetConfig);
+app.use(globalLimiter);
 app.use(cors({ 
   origin: config.api.corsOrigin,
   credentials: true
 }));
 app.use(express.json());
 app.use(express.raw({ type: 'application/octet-stream', limit: '500mb' }));
+app.use(csrfProtection);
 
 // Health check
 app.get('/health', (req, res) => {
@@ -49,10 +60,11 @@ app.get('/health', (req, res) => {
 });
 
 // API Routes
-app.use('/api/auth', authRoutes);
-app.use('/api/videos', authenticate, videoRoutes);
-app.use('/api/images', authenticate, imageRoutes);
+app.use('/api/auth', authLimiter, authRoutes);
+app.use('/api/videos', processingLimiter, authenticate, videoRoutes);
+app.use('/api/images', processingLimiter, authenticate, imageRoutes);
 app.use('/api/billing', authenticate, billingRoutes);
+app.use('/api/admin', authenticate, adminOnly, adminRoutes);
 
 // Error handler (must be last)
 app.use(errorHandler);
