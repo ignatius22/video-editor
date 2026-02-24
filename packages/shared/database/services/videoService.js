@@ -384,6 +384,41 @@ class VideoService {
       recentImages: parseInt(result.rows[0].recent_images) || 0
     };
   }
+
+  /**
+   * Get videos older than a specific date for pruning
+   * @param {Date} olderThan - Pruning threshold
+   * @returns {Promise<array>} List of old videos
+   */
+  async getExpiredVideos(olderThan) {
+    const result = await query(
+      'SELECT * FROM videos WHERE created_at < $1',
+      [olderThan]
+    );
+    return result.rows;
+  }
+
+  /**
+   * Get operations older than a specific date for pruning
+   * @param {Date} olderThan - Pruning threshold
+   * @returns {Promise<array>} List of old operations
+   */
+  async getExpiredOperations(olderThan) {
+    const result = await query(
+      `SELECT * FROM video_operations 
+       WHERE created_at < $1 AND status = 'completed'`,
+      [olderThan]
+    );
+    return result.rows;
+  }
+
+  /**
+   * Delete a specific operation record
+   * @param {number} operationId - Operation database ID
+   */
+  async deleteOperation(operationId) {
+    await query('DELETE FROM video_operations WHERE id = $1', [operationId]);
+  }
 }
 
 module.exports = new VideoService();

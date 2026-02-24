@@ -36,6 +36,19 @@ async function start() {
     await queue.restoreIncompleteJobs();
     logger.info('Cleanup: Incomplete jobs restoration check complete');
 
+    // Start periodic storage cleanup (run every 1 hour)
+    const storagePruner = require('./lib/cleanup');
+    // Run once at startup
+    storagePruner.run().catch(err => logger.error({ err: err.message }, 'Initial storage cleanup failed'));
+    
+    // Set interval for subsequent runs
+    const CLEANUP_INTERVAL = 60 * 60 * 1000; // 1 hour
+    setInterval(() => {
+      storagePruner.run().catch(err => logger.error({ err: err.message }, 'Periodic storage cleanup failed'));
+    }, CLEANUP_INTERVAL);
+
+    logger.info({ intervalMs: CLEANUP_INTERVAL }, 'Storage cleanup task scheduled');
+
   } catch (error) {
     logger.error({ err: error.message, stack: error.stack }, 'FAILED TO START WORKER');
     process.exit(1);

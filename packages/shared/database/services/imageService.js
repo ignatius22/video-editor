@@ -364,6 +364,40 @@ class ImageService {
 
     return result.rows;
   }
+  /**
+   * Get images older than a specific date for pruning
+   * @param {Date} olderThan - Pruning threshold
+   * @returns {Promise<array>} List of old images
+   */
+  async getExpiredImages(olderThan) {
+    const result = await query(
+      'SELECT * FROM images WHERE created_at < $1',
+      [olderThan]
+    );
+    return result.rows;
+  }
+
+  /**
+   * Get operations older than a specific date for pruning
+   * @param {Date} olderThan - Pruning threshold
+   * @returns {Promise<array>} List of old operations
+   */
+  async getExpiredOperations(olderThan) {
+    const result = await query(
+      `SELECT * FROM image_operations 
+       WHERE created_at < $1 AND status = 'completed'`,
+      [olderThan]
+    );
+    return result.rows;
+  }
+
+  /**
+   * Delete a specific operation record
+   * @param {number} operationId - Operation database ID
+   */
+  async deleteOperation(operationId) {
+    await query('DELETE FROM image_operations WHERE id = $1', [operationId]);
+  }
 }
 
 module.exports = new ImageService();
