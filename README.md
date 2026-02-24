@@ -58,6 +58,17 @@ node scripts/reconciliation.js --mode repair --userId 123
 
 ---
 
+## 📮 Durable Outbox Pattern
+The platform ensures $100\%$ durability for all external side effects (Event Bus, Socket.IO) using the **Transactional Outbox Pattern**.
+
+### Core Invariants
+- **Atomic Side-Effects**: Side effects (e.g., `job.completed`) are recorded in the `outbox_events` table within the same transaction as the business state update.
+- **At-Least-Once Delivery**: A dedicated `OutboxDispatcher` polls the table and publishes events to RabbitMQ. If the API crashes mid-broadcast, the dispatcher ensures delivery upon restart.
+- **Concurrent Polling**: Uses `SELECT FOR UPDATE SKIP LOCKED` to allow multiple API instances to safely process the outbox without duplication.
+- **Self-Healing**: Automatically reclaims events that are "stuck" in processing due to worker crashes.
+
+---
+
 ## 🏗️ Architecture
 
 ```
@@ -72,17 +83,19 @@ node scripts/reconciliation.js --mode repair --userId 123
 ┌──────────────────────────────────────────────────────────────┐
 │                  API SERVICE (port 3000)                       │
 │  Express + PostgreSQL + Socket.IO                             │
-│  Authentication · Uploads · Metadata · Job submission         │
-└──────────────┬───────────────────────────────────────────────┘
-               │ Bull Queue (Redis)
-               ↓
-┌──────────────────────────────────────────────────────────────┐
+│  · Outbox Dispatcher (Atomic Side Effects)                    │
+│  · Authentication · Job Submission · Live Updates             │
+└──────────────┬───────────────┬───────────────────────────────┘
+               │               │
+      Bull Queue (Redis)    Event Bus (RabbitMQ)
+               │               │
+┌──────────────┴───────────────┴──────────────────────────────┐
 │              WORKER SERVICE (background × N)                  │
 │  FFmpeg video/image processing                                │
-│  Configurable concurrency (default: 5)                        │
+│  Transactional job updates via Outbox                         │
 └──────────────────────────────────────────────────────────────┘
                │
-         Shared Resources: PostgreSQL · Redis · File Storage
+         Shared Resources: PostgreSQL · Redis · RabbitMQ · Storage
 ```
 
 ---
