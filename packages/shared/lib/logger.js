@@ -7,16 +7,7 @@ const pino = require('pino');
 const createLogger = (serviceName) => {
   const isProd = process.env.NODE_ENV === 'production';
   
-  const transport = !isProd ? {
-    target: 'pino-pretty',
-    options: {
-      colorize: true,
-      translateTime: 'HH:MM:ss Z',
-      ignore: 'pid,hostname,service',
-    }
-  } : undefined;
-
-  return pino({
+  const pinoOptions = {
     level: process.env.LOG_LEVEL || 'info',
     base: {
       service: serviceName,
@@ -28,7 +19,20 @@ const createLogger = (serviceName) => {
         return { level: label.toUpperCase() };
       },
     },
-  }, transport);
+  };
+
+  if (!isProd) {
+    pinoOptions.transport = {
+      target: 'pino-pretty',
+      options: {
+        colorize: true,
+        translateTime: 'HH:MM:ss Z',
+        ignore: 'pid,hostname,service',
+      }
+    };
+  }
+
+  return pino(pinoOptions);
 };
 
 module.exports = createLogger;

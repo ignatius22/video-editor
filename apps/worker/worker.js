@@ -3,6 +3,8 @@ const telemetry = require('@video-editor/shared/telemetry');
 const sdk = telemetry.initializeTelemetry('video-editor-worker');
 
 const BullQueue = require('./queue/BullQueue');
+const createLogger = require('@video-editor/shared/lib/logger');
+const logger = createLogger('worker');
 const db = require('@video-editor/shared/database/db');
 const config = require('@video-editor/shared/config');
 
@@ -11,8 +13,6 @@ const config = require('@video-editor/shared/config');
  * Background job processor for video and image operations
  * No HTTP server - pure queue consumer
  */
-const BullQueue = require('./queue/BullQueue');
-
 // Initialize Bull Queue
 const queue = new BullQueue();
 

@@ -2,24 +2,26 @@
  * WebSocket Handler
  * Manages real-time job updates via Socket.IO
  */
+const createLogger = require('@video-editor/shared/lib/logger');
+const logger = createLogger('websocket');
 
 module.exports = (io, queue) => {
   io.on('connection', (socket) => {
-    console.log(`[WebSocket] Client connected: ${socket.id}`);
+    logger.info({ socketId: socket.id }, 'WebSocket client connected');
 
     // Subscribe to video/image updates
     socket.on('subscribe', (resourceId) => {
       socket.join(resourceId);
-      console.log(`[WebSocket] Client ${socket.id} subscribed to ${resourceId}`);
+      logger.info({ socketId: socket.id, resourceId }, 'Client subscribed to resource updates');
     });
 
     socket.on('unsubscribe', (resourceId) => {
       socket.leave(resourceId);
-      console.log(`[WebSocket] Client ${socket.id} unsubscribed from ${resourceId}`);
+      logger.info({ socketId: socket.id, resourceId }, 'Client unsubscribed from resource updates');
     });
 
-    socket.on('disconnect', () => {
-      console.log(`[WebSocket] Client disconnected: ${socket.id}`);
+    socket.on('disconnect', (reason) => {
+      logger.info({ socketId: socket.id, reason }, 'WebSocket client disconnected');
     });
   });
 
@@ -28,6 +30,7 @@ module.exports = (io, queue) => {
     queue.on('job:queued', (data) => {
       const resourceId = data.videoId || data.imageId;
       if (resourceId) {
+        logger.debug({ resourceId, jobId: data.jobId }, 'Broadcasting job:queued');
         io.to(resourceId).emit('job:queued', data);
       }
     });
@@ -35,6 +38,7 @@ module.exports = (io, queue) => {
     queue.on('job:started', (data) => {
       const resourceId = data.videoId || data.imageId;
       if (resourceId) {
+        logger.debug({ resourceId, jobId: data.jobId }, 'Broadcasting job:started');
         io.to(resourceId).emit('job:started', data);
       }
     });
@@ -42,6 +46,10 @@ module.exports = (io, queue) => {
     queue.on('job:progress', (data) => {
       const resourceId = data.videoId || data.imageId;
       if (resourceId) {
+        // Only log progress at intervals to avoid spamming logs
+        if (data.progress % 25 === 0) {
+          logger.debug({ resourceId, jobId: data.jobId, progress: data.progress }, 'Broadcasting job:progress');
+        }
         io.to(resourceId).emit('job:progress', data);
       }
     });
@@ -49,6 +57,7 @@ module.exports = (io, queue) => {
     queue.on('job:completed', (data) => {
       const resourceId = data.videoId || data.imageId;
       if (resourceId) {
+        logger.info({ resourceId, jobId: data.jobId }, 'Broadcasting job:completed');
         io.to(resourceId).emit('job:completed', data);
       }
     });
@@ -56,10 +65,11 @@ module.exports = (io, queue) => {
     queue.on('job:failed', (data) => {
       const resourceId = data.videoId || data.imageId;
       if (resourceId) {
+        logger.error({ resourceId, jobId: data.jobId, error: data.error }, 'Broadcasting job:failed');
         io.to(resourceId).emit('job:failed', data);
       }
     });
   }
 
-  console.log('[WebSocket] Socket handler initialized');
+  logger.info('WebSocket socket handler initialized');
 };

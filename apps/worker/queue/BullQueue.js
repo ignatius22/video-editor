@@ -488,6 +488,9 @@ class BullQueue extends EventEmitter {
             span.setAttributes({
               'job.result.output_path': convertedPath,
               'job.result.format': targetFormat,
+            });
+          }
+
           return JSON.stringify({ targetFormat, outputPath: convertedPath });
         } catch (error) {
           logger.error({ err: error.message, stack: error.stack, videoId }, "Video conversion failed");

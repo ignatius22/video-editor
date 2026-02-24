@@ -1,5 +1,4 @@
 const userService = require('@video-editor/shared/database/services/userService');
-const creditTransactionService = require("@video-editor/shared/database/services/creditTransactionService");
 const createLogger = require("@video-editor/shared/lib/logger");
 const logger = createLogger('api');
 
