@@ -6,6 +6,8 @@ const FFOriginal = require('@video-editor/shared/lib/FF');
 const util = require('@video-editor/shared/lib/util');
 const config = require('@video-editor/shared/config');
 const telemetry = require('@video-editor/shared/telemetry');
+const createLogger = require('@video-editor/shared/lib/logger');
+const logger = createLogger('queue');
 
 // Use instrumented FF module if telemetry is enabled
 const FF = telemetry.config.enabled
@@ -31,11 +33,11 @@ class BullQueue extends EventEmitter {
 
     // Surface Redis/Bull connection errors for easier debugging
     this.queue.on('error', (err) => {
-      console.error('[BullQueue] Redis/Bull error:', err);
+      logger.error({ err: err.message, stack: err.stack }, 'Redis/Bull connection error');
     });
 
     this.queue.on('ready', () => {
-      console.log('[BullQueue] Connected to Redis and ready');
+      logger.info('Bull queue connected to Redis and ready');
     });
 
     // Configuration
@@ -46,12 +48,52 @@ class BullQueue extends EventEmitter {
 
     // Setup Bull event listeners (translate to our custom events)
     this.setupBullEventListeners();
+    
+    // Add structured logging for internal events
+    this.setupLoggingEventListeners();
 
     // Restore incomplete jobs from database on startup
     this.restoreIncompleteJobs();
 
-    console.log('[BullQueue] Initialized with Redis connection');
-    console.log(`[BullQueue] Concurrency: ${this.CONCURRENCY} jobs in parallel`);
+    logger.info({
+      concurrency: this.CONCURRENCY,
+      redis: `${config.redis.host}:${config.redis.port}`
+    }, 'BullQueue initialized');
+  }
+
+  setupLoggingEventListeners() {
+    this.on('job:queued', (data) => {
+      logger.info({ jobId: data.jobId, type: data.type, resourceId: data.videoId || data.imageId }, 'Job Queued');
+    });
+
+    this.on('job:started', (data) => {
+      logger.info({ jobId: data.jobId, type: data.type, resourceId: data.videoId || data.imageId }, 'Job Started');
+    });
+
+    this.on('job:progress', (data) => {
+      // Log progress only at certain intervals (e.g. 25, 50, 75, 100) to avoid log spam
+      if (data.progress % 25 === 0) {
+        logger.debug({ jobId: data.jobId, progress: data.progress }, 'Job Progress');
+      }
+    });
+
+    this.on('job:completed', (data) => {
+      logger.info({ 
+        jobId: data.jobId, 
+        type: data.type, 
+        resourceId: data.videoId || data.imageId,
+        duration: data.duration 
+      }, 'Job Completed');
+    });
+
+    this.on('job:failed', (data) => {
+      logger.error({ 
+        jobId: data.jobId, 
+        type: data.type, 
+        resourceId: data.videoId || data.imageId,
+        err: data.error 
+      }, 'Job Failed');
+    });
   }
 
   setupProcessors() {

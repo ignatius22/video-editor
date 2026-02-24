@@ -5,6 +5,7 @@ async function request(url, options = {}) {
     credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
+      'X-CSRF-Protection': '1',
       ...options.headers,
     },
     ...options,
@@ -61,12 +62,36 @@ export const upgradeTier = (tier = 'pro') =>
 export const getVideos = () =>
   request('/videos');
 
+// --- Admin Functions ---
+
+/**
+ * Get all users (admin only)
+ */
+export const getAllUsers = (limit = 50, offset = 0) =>
+  request(`/admin/users?limit=${limit}&offset=${offset}`);
+
+/**
+ * Update user tier/credits (admin only)
+ */
+export const updateUserAdmin = (userId, data) =>
+  request(`/admin/users/${userId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+
+/**
+ * Get platform-wide statistics (admin only)
+ */
+export const getPlatformStats = () =>
+  request('/admin/stats');
+
 export const uploadVideo = async (file, onProgress) => {
   const res = await fetch(`${API_BASE}/videos/upload`, {
     method: 'POST',
     credentials: 'include',
     headers: {
       'Content-Type': 'application/octet-stream',
+      'X-CSRF-Protection': '1',
       'filename': file.name,
     },
     body: file,
@@ -109,6 +134,7 @@ export const uploadImage = async (file) => {
     credentials: 'include',
     headers: {
       'Content-Type': 'application/octet-stream',
+      'X-CSRF-Protection': '1',
       'filename': file.name,
     },
     body: file,

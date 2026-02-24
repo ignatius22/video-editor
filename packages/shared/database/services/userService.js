@@ -104,7 +104,7 @@ class UserService {
    * @returns {Promise<object>} Updated user
    */
   async updateUser(id, updates) {
-    const allowedFields = ['username', 'email', 'tier'];
+    const allowedFields = ['username', 'email', 'tier', 'credits', 'is_admin'];
     const fields = [];
     const values = [];
     let paramCount = 1;
@@ -126,7 +126,7 @@ class UserService {
     const result = await query(
       `UPDATE users SET ${fields.join(', ')}
        WHERE id = $${paramCount}
-       RETURNING id, username, email, tier, created_at, updated_at`,
+       RETURNING id, username, email, tier, credits, is_admin, created_at, updated_at`,
       values
     );
 
