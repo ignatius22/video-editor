@@ -18,16 +18,19 @@ export default function BillingPage() {
   const { user, refreshUser } = useAuth();
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [buying, setBuying] = useState(false);
   const [upgrading, setUpgrading] = useState(false);
 
   useEffect(() => {
-    fetchTransactions();
+    fetchTransactions(true);
   }, []);
 
-  const fetchTransactions = async () => {
+  const fetchTransactions = async (initial = false) => {
     try {
-      setLoading(true);
+      if (initial) setLoading(true);
+      else setIsRefreshing(true);
+      
       const data = await api.getTransactions();
       setTransactions(data.transactions || []);
     } catch (error) {
@@ -35,6 +38,7 @@ export default function BillingPage() {
       toast.error('Failed to load transaction history');
     } finally {
       setLoading(false);
+      setIsRefreshing(false);
     }
   };
 
@@ -44,7 +48,7 @@ export default function BillingPage() {
       await api.buyCredits(amount, `Purchased ${amount} credits bundle`);
       toast.success(`Purchased ${amount} credits!`);
       await refreshUser();
-      await fetchTransactions();
+      await fetchTransactions(false);
     } catch (error) {
       toast.error('Purchase failed');
     } finally {
@@ -58,7 +62,7 @@ export default function BillingPage() {
       await api.upgradeTier('pro');
       toast.success('Successfully upgraded to PRO!');
       await refreshUser();
-      await fetchTransactions();
+      await fetchTransactions(false);
     } catch (error) {
       toast.error('Upgrade failed');
     } finally {
@@ -163,34 +167,37 @@ export default function BillingPage() {
               <h2 className="text-xl font-semibold flex items-center gap-2">
                 <History className="w-5 h-5 text-zinc-400" />
                 Transaction History
+                {isRefreshing && <div className="ml-2 w-3 h-3 border-2 border-indigo-400 border-t-transparent animate-spin rounded-full" />}
               </h2>
               <button 
                 type="button"
-                onClick={fetchTransactions}
-                disabled={loading}
+                onClick={() => fetchTransactions(false)}
+                disabled={loading || isRefreshing}
                 className="text-xs text-indigo-400 hover:text-indigo-300 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
               >
-                {loading && <div className="w-3 h-3 border-2 border-indigo-400 border-t-transparent animate-spin rounded-full" />}
+                {(loading || isRefreshing) && <div className="w-3 h-3 border-2 border-indigo-400 border-t-transparent animate-spin rounded-full" />}
                 Refresh
               </button>
             </div>
-            <div className="overflow-x-auto">
-              {loading ? (
-                <div className="p-12 flex justify-center">
+            <div className="overflow-x-auto min-h-[300px] transition-all">
+              {loading && transactions.length === 0 ? (
+                <div className="p-12 flex flex-col items-center justify-center gap-4 text-zinc-500">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-500"></div>
+                  <p className="text-sm font-medium animate-pulse">Loading history...</p>
                 </div>
               ) : transactions.length > 0 ? (
-                <table className="w-full text-left">
-                  <thead>
-                    <tr className="bg-zinc-800/30 text-xs text-zinc-400 border-b border-zinc-800">
-                      <th className="px-6 py-4 font-semibold">Date</th>
-                      <th className="px-6 py-4 font-semibold">Description</th>
-                      <th className="px-6 py-4 font-semibold">Type</th>
-                      <th className="px-6 py-4 font-semibold text-right">Amount</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-zinc-800">
-                    {transactions.map((tx) => (
+                <div className={isRefreshing ? 'opacity-40 pointer-events-none transition-opacity duration-300' : 'opacity-100 transition-opacity duration-300'}>
+                  <table className="w-full text-left">
+                    <thead>
+                      <tr className="bg-zinc-800/30 text-xs text-zinc-400 border-b border-zinc-800">
+                        <th className="px-6 py-4 font-semibold">Date</th>
+                        <th className="px-6 py-4 font-semibold">Description</th>
+                        <th className="px-6 py-4 font-semibold">Type</th>
+                        <th className="px-6 py-4 font-semibold text-right">Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-800">
+                      {transactions.map((tx) => (
                       <tr key={tx.id} className="text-sm hover:bg-zinc-800/10">
                         <td className="px-6 py-4 text-zinc-500 whitespace-nowrap">
                           {formatDate(tx.created_at)}
@@ -216,7 +223,8 @@ export default function BillingPage() {
                     ))}
                   </tbody>
                 </table>
-              ) : (
+              </div>
+            ) : (
                 <div className="p-12 text-center text-zinc-500">
                   <TrendingUp className="w-12 h-12 mx-auto mb-4 opacity-20" />
                   <p>No transactions found. Your history will appear here.</p>
