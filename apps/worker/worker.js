@@ -11,50 +11,36 @@ const config = require('@video-editor/shared/config');
  * Background job processor for video and image operations
  * No HTTP server - pure queue consumer
  */
-
-console.log(`
-╔═══════════════════════════════════════════════════════════╗
-║         VIDEO EDITOR WORKER SERVICE                       ║
-║                                                           ║
-║  Environment: ${config.api.env.padEnd(44)}║
-║  Redis:       ${config.redis.host}:${config.redis.port}${' '.repeat(44 - (config.redis.host + ':' + config.redis.port).length)}║
-║  Database:    ${config.database.host}:${config.database.port} (${config.database.database})${' '.repeat(44 - (config.database.host + ':' + config.database.port + ' (' + config.database.database + ')').length)}║
-║  Concurrency: ${config.queue.concurrency} jobs${' '.repeat(44 - (config.queue.concurrency + ' jobs').toString().length)}║
-║                                                           ║
-║  Processors:                                              ║
-║    - Video resize                                         ║
-║    - Video format conversion                              ║
-║    - Image crop                                           ║
-║    - Image resize                                         ║
-║    - Image format conversion                              ║
-║                                                           ║
-╚═══════════════════════════════════════════════════════════╝
-`);
+const BullQueue = require('./queue/BullQueue');
 
 // Initialize Bull Queue
 const queue = new BullQueue();
 
-// Log queue events
-queue.on('job:queued', (data) => {
-  console.log(`[Worker] ✓ Job queued: ${data.jobId} (${data.type})`);
-});
+/**
+ * Worker Entry Point
+ */
+async function start() {
+  logger.info({
+    env: config.api.env,
+    redis: `${config.redis.host}:${config.redis.port}`,
+    concurrency: config.queue.concurrency
+  }, 'VIDEO EDITOR WORKER SERVICE STARTING');
 
-queue.on('job:started', (data) => {
-  console.log(`[Worker] → Job started: ${data.jobId} (${data.type})`);
-});
+  try {
+    // Setup processors for different job types
+    queue.setupProcessors();
+    
+    logger.info('Worker processors registered and listening for jobs');
 
-queue.on('job:progress', (data) => {
-  console.log(`[Worker] ⏳ Job progress: ${data.jobId} - ${data.progress}%`);
-});
+    // Restore any incomplete jobs from the database (e.g. after a crash)
+    await queue.restoreIncompleteJobs();
+    logger.info('Cleanup: Incomplete jobs restoration check complete');
 
-queue.on('job:completed', (data) => {
-  const duration = data.duration ? `in ${data.duration}ms` : '';
-  console.log(`[Worker] ✓ Job completed: ${data.jobId} (${data.type}) ${duration}`);
-});
-
-queue.on('job:failed', (data) => {
-  console.error(`[Worker] ✗ Job failed: ${data.jobId} (${data.type}) - ${data.error}`);
-});
+  } catch (error) {
+    logger.error({ err: error.message, stack: error.stack }, 'FAILED TO START WORKER');
+    process.exit(1);
+  }
+}
 
 // Graceful shutdown
 const shutdown = async () => {

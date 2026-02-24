@@ -2,6 +2,9 @@
 const telemetry = require('@video-editor/shared/telemetry');
 const sdk = telemetry.initializeTelemetry('video-editor-api');
 
+const createLogger = require('@video-editor/shared/lib/logger');
+const logger = createLogger('api');
+
 const express = require('express');
 const http = require('http');
 const socketIO = require('socket.io');
@@ -50,6 +53,22 @@ app.use(express.json());
 app.use(express.raw({ type: 'application/octet-stream', limit: '500mb' }));
 app.use(csrfProtection);
 
+// Add request logging middleware
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    logger.info({
+      method: req.method,
+      url: req.url,
+      status: res.statusCode,
+      duration: `${duration}ms`,
+      ip: req.ip
+    }, 'HTTP Request');
+  });
+  next();
+});
+
 // Health check
 app.get('/health', (req, res) => {
   res.json({
@@ -83,17 +102,17 @@ if (process.env.NODE_ENV !== 'test') {
     // Initialize WebSocket handler
     require('./websocket/socketHandler')(io, queue);
 
-    console.log('[API] Bull queue initialized');
+    logger.info('Bull queue initialized');
   } catch (error) {
-    console.warn('[API] Bull queue not initialized (worker service may be running separately):', error.message);
+    logger.warn({ err: error.message }, 'Bull queue not initialized (worker service may be running separately)');
   }
 }
 
 // Graceful shutdown
 process.on('SIGTERM', async () => {
-  console.log('[API] SIGTERM received, shutting down gracefully...');
+  logger.info('SIGTERM received, shutting down gracefully...');
   server.close(async () => {
-    console.log('[API] HTTP server closed');
+    logger.info('HTTP server closed');
 
     // Flush telemetry before closing queue
     if (sdk) {
@@ -102,7 +121,7 @@ process.on('SIGTERM', async () => {
 
     if (queue) {
       queue.close().then(() => {
-        console.log('[API] Queue closed');
+        logger.info('Queue closed');
         process.exit(0);
       });
     } else {
@@ -112,9 +131,9 @@ process.on('SIGTERM', async () => {
 });
 
 process.on('SIGINT', async () => {
-  console.log('[API] SIGINT received, shutting down gracefully...');
+  logger.info('SIGINT received, shutting down gracefully...');
   server.close(async () => {
-    console.log('[API] HTTP server closed');
+    logger.info('HTTP server closed');
 
     // Flush telemetry before closing queue
     if (sdk) {
@@ -123,7 +142,7 @@ process.on('SIGINT', async () => {
 
     if (queue) {
       queue.close().then(() => {
-        console.log('[API] Queue closed');
+        logger.info('Queue closed');
         process.exit(0);
       });
     } else {
@@ -135,30 +154,13 @@ process.on('SIGINT', async () => {
 // Start server
 const PORT = config.api.port;
 server.listen(PORT, () => {
-  console.log(`
-╔═══════════════════════════════════════════════════════════╗
-║         VIDEO EDITOR API SERVICE                          ║
-║                                                           ║
-║  Environment: ${config.api.env.padEnd(44)}║
-║  Port:        ${PORT.toString().padEnd(44)}║
-║  Database:    ${config.database.host}:${config.database.port} (${config.database.database})${' '.repeat(44 - (config.database.host + ':' + config.database.port + ' (' + config.database.database + ')').length)}║
-║  Redis:       ${config.redis.host}:${config.redis.port}${' '.repeat(44 - (config.redis.host + ':' + config.redis.port).length)}║
-║  WebSocket:   ${queue ? 'Enabled' : 'Disabled'}${' '.repeat(44 - (queue ? 'Enabled' : 'Disabled').length)}║
-║                                                           ║
-║  Endpoints:                                               ║
-║    POST   /api/auth/login                                 ║
-║    GET    /api/videos                                     ║
-║    POST   /api/videos/upload                              ║
-║    POST   /api/videos/resize                              ║
-║    POST   /api/videos/convert                             ║
-║    GET    /api/videos/asset                               ║
-║    GET    /api/images                                     ║
-║    POST   /api/images/upload                              ║
-║    POST   /api/images/crop                                ║
-║    GET    /api/images/asset                               ║
-║                                                           ║
-╚═══════════════════════════════════════════════════════════╝
-  `);
+  logger.info({
+    port: PORT,
+    env: config.api.env,
+    db: `${config.database.host}:${config.database.port}`,
+    redis: `${config.redis.host}:${config.redis.port}`,
+    websocket: !!queue
+  }, 'VIDEO EDITOR API SERVICE STARTED');
 });
 
 module.exports = { app, server };

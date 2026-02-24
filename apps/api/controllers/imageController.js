@@ -9,6 +9,8 @@ const pipeline = promisify(stream.pipeline);
 const imageService = require("@video-editor/shared/database/services/imageService");
 const FFOriginal = require("@video-editor/shared/lib/FF");
 const util = require("@video-editor/shared/lib/util");
+const createLogger = require("@video-editor/shared/lib/logger");
+const logger = createLogger('api');
 const telemetry = require("@video-editor/shared/telemetry");
 const userService = require("@video-editor/shared/database/services/userService");
 
@@ -39,8 +41,8 @@ const getImages = async (req, res) => {
 
     res.status(200).json(images);
   } catch (error) {
-    console.error("[API] Get images error:", error);
-    res.status(500).json({ error: "Failed to retrieve images." });
+    logger.error({ err: error.message, stack: error.stack, userId: req.userId }, "Get images error");
+    res.status(500).json({ error: "Failed to fetch images." });
   }
 };
 
@@ -175,8 +177,8 @@ const cropImage = async (req, res) => {
       message: "Image cropping queued!"
     });
   } catch (error) {
-    console.error("[API] Crop error:", error);
-    res.status(500).json({ error: "Failed to start crop job." });
+    logger.error({ err: error.message, stack: error.stack, userId: req.userId, imageId }, "Crop error");
+    res.status(500).json({ error: "Crop operation failed." });
   }
 };
 
@@ -227,8 +229,8 @@ const resizeImage = async (req, res) => {
       message: "Image resizing queued!"
     });
   } catch (error) {
-    console.error("[API] Resize error:", error);
-    res.status(500).json({ error: "Failed to start resize job." });
+    logger.error({ err: error.message, stack: error.stack, userId: req.userId, imageId }, "Resize error");
+    res.status(500).json({ error: "Resize operation failed." });
   }
 };
 
@@ -295,8 +297,8 @@ const convertImage = async (req, res) => {
       message: `Conversion to ${targetFormat.toUpperCase()} queued!`
     });
   } catch (error) {
-    console.error("[API] Convert error:", error);
-    res.status(500).json({ error: "Failed to start convert job." });
+    logger.error({ err: error.message, stack: error.stack, userId: req.userId, imageId }, "Convert error");
+    res.status(500).json({ error: "Conversion failed." });
   }
 };
 
@@ -373,9 +375,9 @@ const getImageAsset = async (req, res) => {
     });
 
     readStream.on("error", (err) => {
-      console.error("[API] Stream error:", err);
+      logger.error({ err: err.message, stack: err.stack, imageId }, "Stream error during image asset retrieval");
       if (!res.headersSent) {
-        res.status(500).json({ error: "Error streaming asset." });
+        res.status(500).json({ error: "Error streaming image" });
       }
       readStream.destroy();
     });

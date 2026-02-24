@@ -9,6 +9,8 @@ const pipeline = promisify(stream.pipeline);
 const videoService = require("@video-editor/shared/database/services/videoService");
 const FFOriginal = require("@video-editor/shared/lib/FF");
 const util = require("@video-editor/shared/lib/util");
+const createLogger = require("@video-editor/shared/lib/logger");
+const logger = createLogger('api');
 const telemetry = require("@video-editor/shared/telemetry");
 const userService = require("@video-editor/shared/database/services/userService");
 
@@ -39,8 +41,8 @@ const getVideos = async (req, res) => {
 
     res.status(200).json(videos);
   } catch (error) {
-    console.error("[API] Get videos error:", error);
-    res.status(500).json({ error: "Failed to retrieve videos." });
+    logger.error({ err: error.message, stack: error.stack, userId: req.userId }, "Get videos error");
+    res.status(500).json({ error: "Failed to fetch videos." });
   }
 };
 
@@ -112,7 +114,7 @@ const uploadVideo = async (req, res) => {
       dimensions
     });
   } catch (error) {
-    console.error("[API] Upload failed:", error);
+    logger.error({ err: error.message, stack: error.stack, userId: req.userId, videoId }, "Upload video error");
 
     // Cleanup on failure
     try {
@@ -172,11 +174,8 @@ const extractAudio = async (req, res) => {
       message: "Audio extracted successfully!"
     });
   } catch (error) {
-    console.error("[API] Extract audio error:", error);
-    res.status(500).json({
-      error: "Failed to extract audio.",
-      details: error.message
-    });
+    logger.error({ err: error.message, stack: error.stack, userId: req.userId, videoId }, "Extract audio error");
+    res.status(500).json({ error: "Audio extraction failed." });
   }
 };
 
@@ -228,8 +227,8 @@ const resizeVideo = async (req, res) => {
       message: "Video resize job queued!"
     });
   } catch (error) {
-    console.error("[API] Resize video error:", error);
-    res.status(500).json({ error: "Failed to start video resize." });
+    logger.error({ err: error.message, stack: error.stack, userId: req.userId, videoId }, "Resize video error");
+    res.status(500).json({ error: "Resize operation failed." });
   }
 };
 
@@ -298,9 +297,9 @@ const convertVideo = async (req, res) => {
       message: `Video conversion to ${targetFormat.toUpperCase()} queued!`
     });
   } catch (error) {
-    console.error("[API] Convert video error:", error);
+    logger.error({ err: error.message, stack: error.stack, userId: req.userId, videoId }, "Convert video error");
     res.status(500).json({
-      error: "Failed to start video conversion.",
+      error: "Video conversion failed.",
       details: error.message
     });
   }
@@ -385,9 +384,9 @@ const getVideoAsset = async (req, res) => {
 
     // Handle stream errors
     fileStream.on("error", (err) => {
-      console.error("[API] Stream error:", err);
+      logger.error({ err: err.message, stack: err.stack, videoId }, "Stream error during asset retrieval");
       if (!res.headersSent) {
-        res.status(500).json({ error: "Error streaming asset." });
+        res.status(500).json({ error: "Error streaming video" });
       }
       fileStream.destroy();
     });

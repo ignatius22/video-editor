@@ -1,4 +1,7 @@
 const userService = require('@video-editor/shared/database/services/userService');
+const creditTransactionService = require("@video-editor/shared/database/services/creditTransactionService");
+const createLogger = require("@video-editor/shared/lib/logger");
+const logger = createLogger('api');
 
 /**
  * Get user credit transactions
@@ -16,8 +19,8 @@ const getTransactions = async (req, res) => {
     
     res.status(200).json({ transactions });
   } catch (error) {
-    console.error('[API] Get transactions error:', error);
-    res.status(500).json({ error: 'Failed to retrieve transactions.' });
+    logger.error({ err: error.message, stack: error.stack, userId: req.userId }, 'Get transactions error');
+    res.status(500).json({ error: "Failed to fetch transactions." });
   }
 };
 
@@ -40,8 +43,8 @@ const buyCredits = async (req, res) => {
       credits: updatedUser.credits
     });
   } catch (error) {
-    console.error('[API] Buy credits error:', error);
-    res.status(500).json({ error: 'Failed to purchase credits.' });
+    logger.error({ err: error.message, stack: error.stack, userId: req.userId }, 'Buy credits error');
+    res.status(500).json({ error: "Failed to process transaction." });
   }
 };
 
@@ -65,8 +68,8 @@ const upgradeTier = async (req, res) => {
       user: updatedUser
     });
   } catch (error) {
-    console.error('[API] Upgrade tier error:', error);
-    res.status(500).json({ error: 'Failed to upgrade tier.' });
+    logger.error({ err: error.message, stack: error.stack, userId: req.userId }, 'Upgrade tier error');
+    res.status(500).json({ error: "Failed to upgrade tier." });
   }
 };
 

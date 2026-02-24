@@ -1,5 +1,7 @@
 const userService = require("@video-editor/shared/database/services/userService");
 const sessionService = require("@video-editor/shared/database/services/sessionService");
+const createLogger = require("@video-editor/shared/lib/logger");
+const logger = createLogger('api');
 
 /**
  * Authentication Controller
@@ -49,7 +51,7 @@ const register = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error("[API] Registration error:", error);
+    logger.error({ err: error.message, stack: error.stack }, "Registration error");
     res.status(500).json({
       error: "Registration failed. Please try again."
     });
@@ -94,7 +96,7 @@ const login = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error("[API] Login error:", error);
+    logger.error({ err: error.message, stack: error.stack }, "Login error");
     res.status(500).json({
       error: "Login failed. Please try again."
     });
@@ -116,7 +118,7 @@ const logout = async (req, res) => {
     );
     res.status(200).json({ message: "Logged out successfully!" });
   } catch (error) {
-    console.error("[API] Logout error:", error);
+    logger.error({ err: error.message, stack: error.stack }, "Logout error");
     res.status(500).json({
       error: "Logout failed. Please try again."
     });
@@ -145,9 +147,9 @@ const getUserInfo = async (req, res) => {
       created_at: user.created_at
     });
   } catch (error) {
-    console.error("[API] Get user info error:", error);
+    logger.error({ err: error.message, stack: error.stack, userId: req.userId }, "Get user info error");
     res.status(500).json({
-      error: "Failed to retrieve user info."
+      error: "Failed to fetch user profiles."
     });
   }
 };
@@ -189,9 +191,9 @@ const updateUser = async (req, res) => {
       password_updated: !!password
     });
   } catch (error) {
-    console.error("[API] Update user error:", error);
+    logger.error({ err: error.message, stack: error.stack, userId: req.userId }, "Update user error");
     res.status(500).json({
-      error: "Failed to update user."
+      error: "Failed to update profile."
     });
   }
 };

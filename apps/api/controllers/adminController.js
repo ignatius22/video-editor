@@ -1,4 +1,7 @@
 const userService = require('@video-editor/shared/database/services/userService');
+const jobHistoryService = require("@video-editor/shared/database/services/jobHistoryService");
+const createLogger = require("@video-editor/shared/lib/logger");
+const logger = createLogger('api');
 const { query } = require('@video-editor/database/db');
 
 /**
@@ -26,7 +29,7 @@ const getAllUsers = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('[Admin] Error fetching users:', error);
+    logger.error({ err: error.message, stack: error.stack, adminId: req.userId }, 'Error fetching users');
     res.status(500).json({ error: 'Failed to fetch users' });
   }
 };
@@ -52,7 +55,7 @@ const updateUserStatus = async (req, res) => {
       user: updatedUser
     });
   } catch (error) {
-    console.error('[Admin] Error updating user:', error);
+    logger.error({ err: error.message, stack: error.stack, adminId: req.userId, targetUserId: id }, 'Error updating user');
     res.status(500).json({ error: 'Failed to update user' });
   }
 };
@@ -128,7 +131,7 @@ const getPlatformStats = async (req, res) => {
       timestamp: new Date()
     });
   } catch (error) {
-    console.error('[Admin] Error fetching platform stats:', error);
+    logger.error({ err: error.message, stack: error.stack, adminId: req.userId }, 'Error fetching platform stats');
     res.status(500).json({ error: 'Failed to fetch platform statistics' });
   }
 };
