@@ -1,7 +1,8 @@
 node_modules
 .DS_Store
 storage/
-# video-editor-client/
 data/
 .claude
 .env
+.turbo
+apps/web/dist

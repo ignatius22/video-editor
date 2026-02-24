@@ -3,7 +3,7 @@
  * Creates a test user for telemetry testing
  */
 
-const userService = require('./shared/database/services/userService');
+const userService = require('./packages/shared/database/services/userService');
 
 async function createTestUser() {
   try {

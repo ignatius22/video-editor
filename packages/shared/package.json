@@ -1,0 +1,21 @@
+{
+  "name": "@video-editor/shared",
+  "version": "1.0.0",
+  "private": true,
+  "main": "config/index.js",
+  "dependencies": {
+    "@opentelemetry/api": "^1.8.0",
+    "@opentelemetry/auto-instrumentations-node": "^0.42.0",
+    "@opentelemetry/exporter-trace-otlp-grpc": "^0.50.0",
+    "@opentelemetry/instrumentation-express": "^0.38.0",
+    "@opentelemetry/instrumentation-http": "^0.50.0",
+    "@opentelemetry/instrumentation-ioredis": "^0.40.0",
+    "@opentelemetry/instrumentation-pg": "^0.41.0",
+    "@opentelemetry/resources": "^1.22.0",
+    "@opentelemetry/sdk-node": "^0.50.0",
+    "@opentelemetry/semantic-conventions": "^1.22.0",
+    "bcrypt": "^6.0.0",
+    "cpeak": "^1.4.0",
+    "pg": "^8.16.3"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "name": "@video-editor/worker",
+  "version": "2.0.0",
+  "private": true,
+  "main": "worker.js",
+  "scripts": {
+    "dev": "nodemon worker.js",
+    "start": "node worker.js"
+  },
+  "dependencies": {
+    "@video-editor/shared": "*",
+    "bull": "^4.16.5"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.11"
+  }
+}

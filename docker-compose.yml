@@ -39,6 +39,20 @@ services:
     networks:
       - video-editor-network
 
+  # Web Frontend - React SPA served by nginx
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+    container_name: video-editor-web
+    ports:
+      - "5173:80"
+    depends_on:
+      - api
+    restart: unless-stopped
+    networks:
+      - video-editor-network
+
   # Worker Service - Background job processing
   worker:
     build:
@@ -85,7 +99,7 @@ services:
       - POSTGRES_PASSWORD=postgres
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./database/schema.sql:/docker-entrypoint-initdb.d/schema.sql
+      - ./packages/database/schema.sql:/docker-entrypoint-initdb.d/schema.sql
     ports:
       - "5432:5432"
     restart: unless-stopped
