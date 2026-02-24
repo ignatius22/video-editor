@@ -170,7 +170,7 @@ CREATE TABLE IF NOT EXISTS images (
 CREATE TABLE IF NOT EXISTS image_operations (
   id SERIAL PRIMARY KEY,
   image_id VARCHAR(50) NOT NULL REFERENCES images(image_id) ON DELETE CASCADE,
-  operation_type VARCHAR(20) NOT NULL CHECK (operation_type IN ('crop', 'resize')),
+  operation_type VARCHAR(20) NOT NULL CHECK (operation_type IN ('crop', 'resize', 'convert-image')),
   status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'completed', 'failed')),
   parameters JSONB NOT NULL,
   result_path VARCHAR(500),

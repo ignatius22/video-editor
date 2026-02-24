@@ -10,6 +10,7 @@ const imageService = require("@video-editor/shared/database/services/imageServic
 const FFOriginal = require("@video-editor/shared/lib/FF");
 const util = require("@video-editor/shared/lib/util");
 const telemetry = require("@video-editor/shared/telemetry");
+const userService = require("@video-editor/shared/database/services/userService");
 
 // Use instrumented FF module if telemetry is enabled
 const FF = telemetry.config.enabled
@@ -57,6 +58,18 @@ const uploadImage = async (req, res) => {
   const extension = path.extname(specifiedFileName).substring(1).toLowerCase();
   const name = path.parse(specifiedFileName).name;
   const imageId = crypto.randomBytes(4).toString("hex");
+
+  // Tier-based size limits
+  const isPro = req.user && req.user.tier === 'pro';
+  const sizeLimit = isPro ? 50 * 1024 * 1024 : 10 * 1024 * 1024; // 50MB for Pro, 10MB for Free
+  
+  if (req.body.length > sizeLimit) {
+    return res.status(400).json({
+      error: `File size too large for your ${req.user.tier} plan. Max: ${isPro ? '50MB' : '10MB'}.`,
+      limit: sizeLimit,
+      actual: req.body.length
+    });
+  }
 
   if (!["jpg", "jpeg", "png", "gif", "webp"].includes(extension)) {
     return res.status(400).json({ error: "Unsupported image format" });
@@ -154,6 +167,9 @@ const cropImage = async (req, res) => {
       });
     }
 
+    // Deduct credit
+    await userService.deductCredits(req.userId, 1, `Cropped image ${imageId} to ${width}x${height}`);
+
     res.status(200).json({
       status: "success",
       message: "Image cropping queued!"
@@ -202,6 +218,9 @@ const resizeImage = async (req, res) => {
         userId: req.userId
       });
     }
+
+    // Deduct credit
+    await userService.deductCredits(req.userId, 1, `Resized image ${imageId} to ${width}x${height}`);
 
     res.status(200).json({
       status: "success",
@@ -267,6 +286,9 @@ const convertImage = async (req, res) => {
         userId: req.userId
       });
     }
+
+    // Deduct credit
+    await userService.deductCredits(req.userId, 1, `Converted image ${imageId} to ${targetFormat.toUpperCase()}`);
 
     res.status(200).json({
       status: "success",

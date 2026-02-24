@@ -10,6 +10,7 @@ const { authenticate } = require('../middleware/auth');
 
 // Public routes
 router.post('/login', authController.login);
+router.post('/register', authController.register);
 
 // Protected routes
 router.post('/logout', authenticate, authController.logout);

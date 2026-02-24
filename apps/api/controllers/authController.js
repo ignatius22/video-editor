@@ -7,6 +7,56 @@ const sessionService = require("@video-editor/shared/database/services/sessionSe
  */
 
 /**
+ * User registration
+ * POST /api/auth/register
+ */
+const register = async (req, res) => {
+  const { username, email, password } = req.body;
+
+  if (!username || !email || !password) {
+    return res.status(400).json({
+      error: "Username, email, and password are required."
+    });
+  }
+
+  try {
+    // Check if user already exists
+    const existingUser = await userService.findByUsername(username);
+    if (existingUser) {
+      return res.status(400).json({ error: "Username already taken." });
+    }
+
+    const existingEmail = await userService.findByEmail(email);
+    if (existingEmail) {
+      return res.status(400).json({ error: "Email already registered." });
+    }
+
+    // Create user
+    const user = await userService.createUser({ username, email, password });
+
+    // Create session
+    const session = await sessionService.createSession(user.id, 7);
+
+    res.setHeader("Set-Cookie", `token=${session.token}; Path=/; HttpOnly; SameSite=Strict`);
+    res.status(201).json({
+      message: "User registered successfully!",
+      user: {
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        tier: user.tier,
+        credits: user.credits
+      }
+    });
+  } catch (error) {
+    console.error("[API] Registration error:", error);
+    res.status(500).json({
+      error: "Registration failed. Please try again."
+    });
+  }
+};
+
+/**
  * User login
  * POST /api/auth/login
  */
@@ -39,7 +89,8 @@ const login = async (req, res) => {
         id: user.id,
         username: user.username,
         email: user.email,
-        tier: user.tier
+        tier: user.tier,
+        credits: user.credits
       }
     });
   } catch (error) {
@@ -89,6 +140,7 @@ const getUserInfo = async (req, res) => {
       username: user.username,
       email: user.email,
       tier: user.tier,
+      credits: user.credits,
       created_at: user.created_at
     });
   } catch (error) {
@@ -145,6 +197,7 @@ const updateUser = async (req, res) => {
 
 module.exports = {
   login,
+  register,
   logout,
   getUserInfo,
   updateUser

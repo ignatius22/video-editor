@@ -12,6 +12,7 @@ const config = require('@video-editor/shared/config');
 const authRoutes = require('./routes/authRoutes');
 const videoRoutes = require('./routes/videoRoutes');
 const imageRoutes = require('./routes/imageRoutes');
+const billingRoutes = require('./routes/billingRoutes');
 const { authenticate } = require('./middleware/auth');
 const errorHandler = require('./middleware/errorHandler');
 const videoController = require('./controllers/videoController');
@@ -51,6 +52,7 @@ app.get('/health', (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/videos', authenticate, videoRoutes);
 app.use('/api/images', authenticate, imageRoutes);
+app.use('/api/billing', authenticate, billingRoutes);
 
 // Error handler (must be last)
 app.use(errorHandler);
