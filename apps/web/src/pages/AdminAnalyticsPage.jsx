@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import ConvertixLogo from '@/components/ConvertixLogo';
 import { 
   TrendingUp, 
   Activity, 
@@ -36,8 +37,9 @@ export default function AdminAnalyticsPage() {
   if (loading) {
     return (
       <AdminLayout title="Analytics">
-        <div className="flex items-center justify-center h-full">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-500"></div>
+        <div className="flex flex-col items-center justify-center h-full gap-4">
+          <ConvertixLogo size={48} animated />
+          <p className="text-muted-foreground animate-pulse font-medium text-sm">Loading analytics...</p>
         </div>
       </AdminLayout>
     );

@@ -92,58 +92,81 @@ export default function OperationModal({ open, onOpenChange, operation, onSubmit
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>{config.title}</DialogTitle>
-          <DialogDescription>{config.description}</DialogDescription>
+      <DialogContent className="sm:max-w-lg glass border-none shadow-3xl p-0 overflow-hidden rounded-3xl">
+        <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-primary via-primary/50 to-transparent" />
+        
+        <DialogHeader className="p-8 pb-4">
+          <DialogTitle className="text-3xl font-black tracking-tighter uppercase italic text-foreground">
+            Execute <span className="text-primary">Operation</span>
+          </DialogTitle>
+          <DialogDescription className="text-[13px] font-medium text-muted-foreground uppercase tracking-widest opacity-60">
+            {config.title} — {config.description}
+          </DialogDescription>
         </DialogHeader>
 
-        {error && (
-          <div className="rounded-lg bg-destructive/10 border border-destructive/20 px-4 py-3 text-sm text-destructive">
-            {error}
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {config.fields.map((field) => (
-            <div key={field.name} className="space-y-2">
-              <Label htmlFor={field.name}>{field.label}</Label>
-              {field.type === 'select' ? (
-                <Select value={values[field.name] || ''} onValueChange={(v) => handleChange(field.name, v)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder={`Select ${field.label.toLowerCase()}`} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {field.options.map((opt) => (
-                      <SelectItem key={opt} value={opt}>
-                        {opt.toUpperCase()}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              ) : (
-                <Input
-                  id={field.name}
-                  type={field.type}
-                  placeholder={field.placeholder}
-                  value={values[field.name] || ''}
-                  onChange={(e) => handleChange(field.name, e.target.value)}
-                  required
-                  min={field.type === 'number' ? 1 : undefined}
-                />
-              )}
+        <div className="px-8 pb-8">
+          {error && (
+            <div className="mb-6 rounded-xl bg-destructive/10 border border-destructive/20 px-4 py-3 text-[11px] font-bold text-destructive uppercase tracking-widest animate-in-fade">
+              {error}
             </div>
-          ))}
+          )}
 
-          <div className="flex justify-end gap-2 pt-2">
-            <Button variant="outline" type="button" onClick={() => handleClose(false)} disabled={loading}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={loading}>
-              {loading ? 'Processing…' : 'Start'}
-            </Button>
-          </div>
-        </form>
+          <form onSubmit={handleSubmit} className="space-y-6">
+            <div className="space-y-5">
+              {config.fields.map((field) => (
+                <div key={field.name} className="space-y-2">
+                  <Label htmlFor={field.name} className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">
+                    {field.label}
+                  </Label>
+                  {field.type === 'select' ? (
+                    <Select value={values[field.name] || ''} onValueChange={(v) => handleChange(field.name, v)}>
+                      <SelectTrigger className="rounded-xl bg-muted/50 border-border/50 focus:ring-primary/20 h-11 px-4 font-bold border-none shadow-inner">
+                        <SelectValue placeholder={`Select ${field.label.toLowerCase()}`} />
+                      </SelectTrigger>
+                      <SelectContent className="glass border-border/50 rounded-xl">
+                        {field.options.map((opt) => (
+                          <SelectItem key={opt} value={opt} className="text-[11px] font-black uppercase tracking-widest focus:bg-primary/10 transition-colors">
+                            {opt}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <Input
+                      id={field.name}
+                      type={field.type}
+                      placeholder={field.placeholder}
+                      className="rounded-xl bg-muted/50 border-border/50 focus:border-primary/50 focus:ring-primary/20 h-11 px-4 font-bold border-none shadow-inner"
+                      value={values[field.name] || ''}
+                      onChange={(e) => handleChange(field.name, e.target.value)}
+                      required
+                      min={field.type === 'number' ? 1 : undefined}
+                    />
+                  )}
+                </div>
+              ))}
+            </div>
+
+            <div className="flex justify-end gap-3 pt-4">
+              <Button 
+                variant="outline" 
+                type="button" 
+                onClick={() => handleClose(false)} 
+                disabled={loading}
+                className="rounded-xl h-11 px-6 font-black uppercase tracking-widest text-[11px] border-border/50 hover:bg-muted"
+              >
+                Abort
+              </Button>
+              <Button 
+                type="submit" 
+                disabled={loading}
+                className="rounded-xl h-11 px-8 font-black uppercase tracking-widest text-[11px] shadow-xl shadow-primary/20 bg-primary hover:bg-primary/90 transition-all active:scale-95"
+              >
+                {loading ? 'Processing...' : 'Initialize'}
+              </Button>
+            </div>
+          </form>
+        </div>
       </DialogContent>
     </Dialog>
   );

@@ -7,6 +7,7 @@ const stream = require("stream");
 const pipeline = promisify(stream.pipeline);
 
 const videoService = require("@video-editor/shared/database/services/videoService");
+const { transaction } = require("@video-editor/shared/database/db");
 const FFOriginal = require("@video-editor/shared/lib/FF");
 const util = require("@video-editor/shared/lib/util");
 const createLogger = require("@video-editor/shared/lib/logger");
@@ -478,9 +479,10 @@ const getVideoAsset = async (req, res) => {
     });
 
     // Set headers
-    if (type !== "thumbnail") {
-      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
-    } else {
+    const disposition = req.query.download === 'true' ? 'attachment' : 'inline';
+    res.setHeader("Content-Disposition", `${disposition}; filename="${filename}"`);
+
+    if (type === "thumbnail") {
       res.setHeader("Cache-Control", "public, max-age=86400, immutable");
       res.setHeader("ETag", `"${videoId}-${stat.size}-${stat.mtimeMs}"`);
     }

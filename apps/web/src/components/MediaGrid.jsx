@@ -18,19 +18,24 @@ export default function MediaGrid({ items, type, jobs, onAction, getId, getThumb
   }
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-      {items.map((item) => {
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+      {items.map((item, index) => {
         const id = getId(item);
         return (
-          <MediaCard
-            key={id}
-            item={item}
-            type={type}
-            job={jobs[id]}
-            thumbnailUrl={getThumbnailUrl(item)}
-            assetUrl={getAssetUrl(item)}
-            onAction={(op) => onAction(op, item)}
-          />
+          <div 
+            key={id} 
+            className="animate-in-slide-up" 
+            style={{ animationDelay: `${index * 50}ms` }}
+          >
+            <MediaCard
+              item={item}
+              type={type}
+              job={jobs[id]}
+              thumbnailUrl={getThumbnailUrl(item)}
+              assetUrl={getAssetUrl(item)}
+              onAction={(op) => onAction(op, item)}
+            />
+          </div>
         );
       })}
     </div>

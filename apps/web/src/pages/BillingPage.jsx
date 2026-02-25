@@ -9,10 +9,12 @@ import {
   Plus, 
   TrendingUp, 
   AlertCircle,
-  ChevronLeft
+  ChevronLeft,
+  RefreshCw
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Link } from 'react-router-dom';
+import { Button } from '@/components/ui/button';
 
 export default function BillingPage() {
   const { user, refreshUser } = useAuth();
@@ -87,36 +89,38 @@ export default function BillingPage() {
   ];
 
   return (
-    <div className="container mx-auto py-8 px-4 max-w-6xl">
+    <div className="mx-auto py-12 px-4 max-w-6xl space-y-12 animate-in-fade">
       <Link 
         to="/" 
-        className="inline-flex items-center gap-2 text-sm text-zinc-500 hover:text-white mb-6 transition-colors group"
+        className="inline-flex items-center gap-2 text-sm font-bold text-muted-foreground hover:text-primary transition-all group px-4 py-2 hover:bg-primary/10 rounded-xl w-fit"
       >
         <ChevronLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
-        Back to Dashboard
+        <span className="uppercase tracking-widest text-[11px]">Dashboard</span>
       </Link>
 
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Billing & Credits</h1>
-          <p className="text-muted-foreground">Manage your subscription and credits</p>
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-8">
+        <div className="space-y-2">
+          <h1 className="text-4xl font-extrabold tracking-tight text-foreground sm:text-5xl uppercase">
+            Billing <span className="text-primary italic">&</span> Credits
+          </h1>
+          <p className="text-base text-muted-foreground font-medium">Manage your subscription, purchase processing power, and view usage history.</p>
         </div>
         
-        <div className="flex items-center gap-4 bg-zinc-900/50 border border-zinc-800 p-4 rounded-xl backdrop-blur-sm">
+        <div className="flex items-center gap-6 glass p-6 rounded-2xl shadow-xl shadow-primary/5 border-primary/10">
           <div className="flex flex-col">
-            <span className="text-xs text-zinc-500 uppercase font-semibold">Current Balance</span>
-            <span className="text-2xl font-bold flex items-center gap-2">
-              <Zap className="w-5 h-5 text-yellow-500 fill-yellow-500" />
-              {user?.credits || 0} Credits
+            <span className="text-[10px] text-muted-foreground uppercase font-black tracking-widest mb-1">Available Credits</span>
+            <span className="text-3xl font-black flex items-center gap-2 text-foreground tracking-tighter">
+              <Zap className="w-6 h-6 text-primary fill-primary" />
+              {user?.credits || 0}
             </span>
           </div>
-          <div className="h-10 w-px bg-zinc-800 mx-2" />
+          <div className="h-12 w-px bg-border/50 mx-2" />
           <div className="flex flex-col">
-            <span className="text-xs text-zinc-500 uppercase font-semibold">Plan Tier</span>
-            <span className={`text-sm font-bold px-2 py-0.5 rounded-full mt-1 inline-block text-center ${
+            <span className="text-[10px] text-muted-foreground uppercase font-black tracking-widest mb-1">Current Tier</span>
+            <span className={`text-[11px] font-black px-3 py-1 rounded-lg tracking-widest shadow-sm ${
               user?.tier === 'pro' 
-                ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20' 
-                : 'bg-zinc-800 text-zinc-400 border border-zinc-700'
+                ? 'bg-primary text-primary-foreground' 
+                : 'bg-muted text-muted-foreground border border-border'
             }`}>
               {user?.tier?.toUpperCase() || 'FREE'}
             </span>
@@ -124,98 +128,98 @@ export default function BillingPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-12 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-10 items-start">
         {/* Buy Credits Card */}
-        <div className="lg:col-span-2 space-y-6">
-          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden shadow-xl">
-            <div className="p-6 border-b border-zinc-800 bg-gradient-to-r from-zinc-900 to-zinc-800/50">
-              <h2 className="text-xl font-semibold flex items-center gap-2">
-                <Plus className="w-5 h-5 text-indigo-400" />
-                Purchase Credits
+        <div className="lg:col-span-2 space-y-10">
+          <div className="glass-card rounded-2xl overflow-hidden shadow-2xl">
+            <div className="p-8 border-b border-border/50 bg-muted/30">
+              <h2 className="text-xl font-bold flex items-center gap-3 tracking-tight">
+                <Plus className="w-5 h-5 text-primary" />
+                Purchase Power
               </h2>
             </div>
-            <div className="p-6">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="p-8">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 {[20, 50, 100].map((amount) => (
                   <button
                     key={amount}
                     disabled={buying}
                     onClick={() => handleBuyCredits(amount)}
-                    className="flex flex-col items-center p-6 border border-zinc-800 rounded-xl hover:border-indigo-500/50 hover:bg-indigo-500/5 transition-all group"
+                    className="flex flex-col items-center p-8 glass border border-border/50 rounded-2xl hover:border-primary/50 hover:bg-primary/5 transition-all group shadow-sm hover:shadow-primary/10"
                   >
-                    <span className="text-2xl font-bold mb-1 group-hover:scale-110 transition-transform">
+                    <span className="text-4xl font-black mb-1 group-hover:scale-110 transition-transform tracking-tighter">
                       {amount}
                     </span>
-                    <span className="text-xs text-zinc-500 mb-4">Credits</span>
-                    <span className="w-full py-2 bg-zinc-800 rounded-lg text-sm font-medium group-hover:bg-indigo-600 transition-colors">
-                      Buy for ${amount / 10}
+                    <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest mb-6">Credits</span>
+                    <span className="w-full py-2.5 bg-muted rounded-xl text-[11px] font-black uppercase tracking-widest group-hover:bg-primary group-hover:text-primary-foreground transition-all">
+                      ${amount / 10} USD
                     </span>
                   </button>
                 ))}
               </div>
               
-              <div className="mt-6 flex items-start gap-3 p-4 bg-indigo-500/5 border border-indigo-500/10 rounded-xl text-sm text-indigo-300">
-                <AlertCircle className="w-5 h-5 flex-shrink-0" />
-                <p>Credits never expire and can be used for any video or image processing operation. 1 credit = 1 operation.</p>
+              <div className="mt-8 flex items-start gap-3 p-5 bg-primary/5 border border-primary/10 rounded-2xl text-[13px] text-muted-foreground font-medium leading-relaxed">
+                <AlertCircle className="w-5 h-5 flex-shrink-0 text-primary" />
+                <p>Credits grant processing power across the platform. Every operation costs 1 credit. High-resolution exports or advanced AI models may require additional processing units.</p>
               </div>
             </div>
           </div>
 
           {/* Transaction History */}
-          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden shadow-xl">
-            <div className="p-6 border-b border-zinc-800 flex justify-between items-center">
-              <h2 className="text-xl font-semibold flex items-center gap-2">
-                <History className="w-5 h-5 text-zinc-400" />
-                Transaction History
-                {isRefreshing && <div className="ml-2 w-3 h-3 border-2 border-indigo-400 border-t-transparent animate-spin rounded-full" />}
+          <div className="glass-card rounded-2xl overflow-hidden shadow-2xl">
+            <div className="p-8 border-b border-border/50 flex justify-between items-center bg-muted/30">
+              <h2 className="text-xl font-bold flex items-center gap-3 tracking-tight">
+                <History className="w-5 h-5 text-muted-foreground" />
+                Usage History
               </h2>
-              <button 
-                type="button"
+              <Button 
+                variant="ghost" 
+                size="sm"
                 onClick={() => fetchTransactions(false)}
                 disabled={loading || isRefreshing}
-                className="text-xs text-indigo-400 hover:text-indigo-300 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+                className="text-[10px] font-black uppercase tracking-widest hover:bg-primary/10 hover:text-primary rounded-xl"
               >
-                {(loading || isRefreshing) && <div className="w-3 h-3 border-2 border-indigo-400 border-t-transparent animate-spin rounded-full" />}
+                {isRefreshing ? <RefreshCw className="w-3 h-3 animate-spin mr-2" /> : <RefreshCw className="w-3 h-3 mr-2" />}
                 Refresh
-              </button>
+              </Button>
             </div>
-            <div className="overflow-x-auto max-h-[280px] overflow-y-auto relative transition-all custom-scrollbar">
+            <div className="overflow-x-auto max-h-[400px] overflow-y-auto relative transition-all custom-scrollbar">
               {loading && transactions.length === 0 ? (
-                <div className="p-12 flex flex-col items-center justify-center gap-4 text-zinc-500 min-h-[300px]">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-500"></div>
-                  <p className="text-sm font-medium animate-pulse">Loading history...</p>
+                <div className="p-20 flex flex-col items-center justify-center gap-6 text-muted-foreground">
+                  <RefreshCw className="w-8 h-8 animate-spin text-primary" />
+                  <p className="text-[11px] font-black uppercase tracking-widest animate-pulse">Scanning Ledger...</p>
                 </div>
               ) : transactions.length > 0 ? (
-                <div className={isRefreshing ? 'opacity-40 pointer-events-none transition-opacity duration-300' : 'opacity-100 transition-opacity duration-300'}>
-                  <table className="w-full text-left">
-                    <thead className="sticky top-0 z-10 bg-zinc-900 shadow-[0_1px_0_0_rgba(255,255,255,0.05)]">
-                      <tr className="bg-zinc-800/30 text-xs text-zinc-400 border-b border-zinc-800">
-                        <th className="px-6 py-4 font-semibold">Date</th>
-                        <th className="px-6 py-4 font-semibold">Description</th>
-                        <th className="px-6 py-4 font-semibold">Type</th>
-                        <th className="px-6 py-4 font-semibold text-right">Amount</th>
+                <div className={isRefreshing ? 'opacity-40 transition-opacity duration-300' : 'opacity-100 transition-opacity duration-300'}>
+                  <table className="w-full text-left border-collapse">
+                    <thead className="sticky top-0 z-10 bg-muted/90 backdrop-blur-md">
+                      <tr className="text-[10px] text-muted-foreground border-b border-border/50 uppercase font-black tracking-widest">
+                        <th className="px-8 py-5">Date</th>
+                        <th className="px-8 py-5">Activity</th>
+                        <th className="px-8 py-5">Type</th>
+                        <th className="px-8 py-5 text-right">Units</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-zinc-800">
+                    <tbody className="divide-y divide-border/30">
                       {transactions.map((tx) => (
-                      <tr key={tx.id} className="text-sm hover:bg-zinc-800/10">
-                        <td className="px-6 py-4 text-zinc-500 whitespace-nowrap">
+                      <tr key={tx.id} className="text-sm hover:bg-primary/5 transition-colors group">
+                        <td className="px-8 py-5 text-[12px] text-muted-foreground font-medium group-hover:text-foreground">
                           {formatDate(tx.created_at)}
                         </td>
-                        <td className="px-6 py-4 font-medium">
+                        <td className="px-8 py-5 font-bold text-foreground">
                           {tx.description}
                         </td>
-                        <td className="px-6 py-4">
-                          <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold ${
+                        <td className="px-8 py-5">
+                          <span className={`px-2 py-0.5 rounded-md text-[10px] uppercase font-black tracking-widest ${
                             tx.type === 'addition' 
-                              ? 'bg-green-500/10 text-green-400' 
-                              : 'bg-red-500/10 text-red-400'
+                              ? 'bg-emerald-500/10 text-emerald-500' 
+                              : 'bg-destructive/10 text-destructive'
                           }`}>
                             {tx.type}
                           </span>
                         </td>
-                        <td className={`px-6 py-4 text-right font-bold ${
-                          tx.type === 'addition' ? 'text-green-400' : 'text-zinc-300'
+                        <td className={`px-8 py-5 text-right font-black tracking-tighter text-base ${
+                          tx.type === 'addition' ? 'text-emerald-500' : 'text-foreground'
                         }`}>
                           {tx.type === 'addition' ? '+' : ''}{tx.amount}
                         </td>
@@ -225,9 +229,9 @@ export default function BillingPage() {
                 </table>
               </div>
             ) : (
-                <div className="p-12 text-center text-zinc-500 min-h-[300px] flex flex-col items-center justify-center">
-                  <TrendingUp className="w-12 h-12 mx-auto mb-4 opacity-20" />
-                  <p>No transactions found. Your history will appear here.</p>
+                <div className="p-20 text-center text-muted-foreground flex flex-col items-center justify-center gap-4">
+                  <TrendingUp className="w-16 h-16 opacity-10" />
+                  <p className="text-[11px] font-black uppercase tracking-widest opacity-40">No records found</p>
                 </div>
               )}
             </div>
@@ -236,55 +240,51 @@ export default function BillingPage() {
 
         {/* Upgrade Card */}
         <div className="space-y-6">
-          <div className={`bg-zinc-900 border ${user?.tier === 'pro' ? 'border-indigo-500/50' : 'border-zinc-800'} rounded-2xl overflow-hidden shadow-xl flex flex-col sticky top-8`}>
+          <div className={`glass-card border-none rounded-3xl overflow-hidden shadow-3xl shadow-primary/10 flex flex-col sticky top-28 transition-all hover:shadow-primary/20`}>
             {user?.tier === 'pro' && (
-              <div className="bg-indigo-600 px-4 py-1 text-center text-[10px] font-bold uppercase tracking-widest">
-                Current Plan
+              <div className="bg-primary px-4 py-1.5 text-center text-[10px] font-black uppercase tracking-widest text-primary-foreground italic">
+                Active Tier
               </div>
             )}
-            <div className="p-8 pb-4">
-              <h3 className="text-2xl font-bold mb-2">Pro Membership</h3>
-              <p className="text-zinc-400 text-sm mb-6">Unlock high-performance processing and features.</p>
+            <div className={`p-10 pb-6 bg-gradient-to-br from-primary/10 via-transparent to-transparent ${user?.tier === 'pro' ? 'border-t-0' : ''}`}>
+              <h3 className="text-3xl font-black mb-3 tracking-tighter uppercase italic">Convertix <span className="text-primary">Pro</span></h3>
+              <p className="text-muted-foreground text-[13px] font-medium leading-relaxed mb-8">Access professional-grade infrastructure for serious content creators.</p>
               
-              <div className="flex items-baseline gap-1 mb-6">
-                <span className="text-4xl font-extrabold">$29</span>
-                <span className="text-zinc-500 text-sm">/month</span>
+              <div className="flex items-baseline gap-2 mb-10">
+                <span className="text-5xl font-black tracking-tighter">$29</span>
+                <span className="text-muted-foreground text-xs font-bold uppercase tracking-widest">/ billed monthly</span>
               </div>
 
-              <div className="space-y-4 mb-8">
-                <div className="flex items-center gap-3 text-sm">
-                  <CheckCircle2 className="w-4 h-4 text-green-500" />
-                  <span>500MB Video Upload Limit</span>
-                </div>
-                <div className="flex items-center gap-3 text-sm">
-                  <CheckCircle2 className="w-4 h-4 text-green-500" />
-                  <span>50MB Image Upload Limit</span>
-                </div>
-                <div className="flex items-center gap-3 text-sm">
-                  <CheckCircle2 className="w-4 h-4 text-green-500" />
-                  <span>Priority Queueing</span>
-                </div>
-                <div className="flex items-center gap-3 text-sm">
-                  <CheckCircle2 className="w-4 h-4 text-green-500" />
-                  <span>50 Bonus Monthly Credits</span>
-                </div>
+              <div className="space-y-5 mb-10">
+                {[
+                  '500MB Upload Threshold',
+                  'High Resolution Buffering',
+                  'Priority Dispatch Queuing',
+                  '50 Bonus Credits Monthly',
+                  'Exclusive AI Features'
+                ].map((feature, i) => (
+                  <div key={i} className="flex items-center gap-3 text-[13px] font-bold text-foreground/80">
+                    <CheckCircle2 className="w-5 h-5 text-primary" />
+                    <span>{feature}</span>
+                  </div>
+                ))}
               </div>
             </div>
 
-            <div className="p-8 pt-0 mt-auto">
-              <button
+            <div className="p-10 pt-0 mt-auto">
+              <Button
                 onClick={handleUpgrade}
                 disabled={upgrading || user?.tier === 'pro'}
-                className={`w-full py-4 rounded-xl font-bold transition-all shadow-lg ${
+                className={`w-full py-7 rounded-2xl font-black uppercase tracking-widest shadow-xl transition-all text-[12px] ${
                   user?.tier === 'pro'
-                    ? 'bg-zinc-800 text-zinc-500 cursor-not-allowed border border-zinc-700'
-                    : 'bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 text-white transform hover:-translate-y-1'
+                    ? 'bg-muted text-muted-foreground hover:bg-muted cursor-not-allowed border-none'
+                    : 'bg-primary hover:bg-primary/90 text-primary-foreground transform hover:-translate-y-1 active:scale-95'
                 }`}
               >
-                {upgrading ? 'Upgrading...' : user?.tier === 'pro' ? 'Active Subscription' : 'Upgrade to Pro'}
-              </button>
-              <p className="text-[10px] text-zinc-500 text-center mt-4 uppercase font-bold tracking-tighter opacity-50">
-                Cancel anytime • No credit card required (Simulation)
+                {upgrading ? 'Upgrading...' : user?.tier === 'pro' ? 'Current Plan' : 'Elevate to Pro'}
+              </Button>
+              <p className="text-[9px] text-muted-foreground text-center mt-6 uppercase font-bold tracking-widest opacity-40 px-4">
+                Full access to all tools • No-risk simulation • 100% Secure
               </p>
             </div>
           </div>
