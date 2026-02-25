@@ -1,71 +1,79 @@
-# Video Editor — Turborepo Monorepo
+# Convertix — Media Processing Studio
 
-A modern, scalable video and image processing platform with a React frontend and Node.js backend. Built as a **Turborepo monorepo** with three apps and two shared packages.
+A modern, scalable **media conversion platform** for processing videos and images at scale. Upload, convert, resize, crop, and manage your media assets through a premium dark-themed UI — powered by FFmpeg, Redis job queues, and a hardened credit-based billing system.
+
+Built as a **Turborepo monorepo** with three apps and two shared packages.
+
+---
 
 ## 🎯 Features
 
-### Video Operations
+### Video Processing
 - **Upload** — stream-based upload with automatic thumbnail generation
 - **Format Conversion** — MP4, MOV, AVI, WebM, MKV, FLV
 - **Resizing** — scale to custom dimensions
-- **Audio Extraction** — extract audio tracks (MP3, WAV, AAC, OGG)
+- **Audio Extraction** — extract audio tracks (AAC)
 
-### Image Operations
+### Image Processing
 - **Upload** — JPG, PNG, GIF, WebP, BMP, TIFF
 - **Cropping** — precise x/y coordinates and dimensions
 - **Resizing** — scale to custom dimensions
-- **Format Conversion** — convert between image formats
+- **Format Conversion** — convert between all supported image formats
 
 ### Platform
-- **React Frontend** — Shadcn/ui dark theme, drag-and-drop uploads, real-time progress
-- **Real-Time Updates** — WebSocket-based job progress via Socket.IO
-- **Background Processing** — Redis-backed Bull queue with scalable workers
-- **User Authentication** — session-based auth with HttpOnly cookies
-- **Distributed Tracing** — OpenTelemetry integration
+- **Premium UI** — Convertix-branded React frontend with custom SVG logo, animated loaders, dark theme, and glassmorphism effects
+- **Real-Time Updates** — WebSocket-based job progress via Socket.IO + RabbitMQ event bus
+- **Background Processing** — Redis-backed Bull queue with horizontally scalable workers
+- **User Authentication** — session-based auth with HttpOnly cookies and bcrypt
+- **Admin Dashboard** — user management, platform analytics, and system monitoring
+- **Credit-Based Billing** — tiered plans (Free / Pro) with a reservation-based ledger system
+- **Distributed Tracing** — OpenTelemetry integration for full observability
+
+---
 
 ## 💰 Billing & Credits
-The platform utilizes a **hardened ledger-first billing system** designed for production reliability.
+
+The platform uses a **hardened ledger-first billing system** designed for production reliability.
 
 ### Core Invariants
-- **Atomic Transactions**: All credit mutations involve both a ledger entry and a cached balance update in a single atomic database transaction.
-- **Idempotency**: All operations require a `request_id` (UUID) to prevent double-charging on network retries.
-- **State Machine Enforcement**: Database triggers prevent illegal transitions (e.g., refunding a captured charge or double-capturing a reservation).
-- **Immutability**: Ledger entries are protected by database triggers that prevent any `UPDATE` or `DELETE` operations.
+- **Atomic Transactions** — all credit mutations involve both a ledger entry and a cached balance update in a single database transaction
+- **Idempotency** — all operations require a `request_id` (UUID) to prevent double-charging on retries
+- **State Machine Enforcement** — database triggers prevent illegal transitions (e.g., refunding a captured charge)
+- **Immutability** — ledger entries are protected by triggers that prevent `UPDATE` or `DELETE`
 
 ### Reservation Lifecycle
-1. **Reserve**: Credits are earmarked and deducted from the user balance when a job is submitted.
-2. **Capture**: Marker is added to the ledger on job success. No balance change occurs.
-3. **Release**: Credits are added back to the balance if a job fails terminally or is cancelled.
+1. **Reserve** — credits are earmarked and deducted from the user balance when a job is submitted
+2. **Capture** — marker is added to the ledger on job success (no balance change)
+3. **Release** — credits are refunded if a job fails or is cancelled
 
-## 🛠️ Operational Tools
+### Operational Tools
 
-### Reservation Janitor
-Automated background worker in `apps/worker` that periodically (default 30m) audits the ledger for "stuck" reservations (orphaned jobs or crashed workers) and releases them.
-
-### Reconciliation CLI
-Manual audit and repair tool located in `apps/api/scripts/reconciliation.js`.
+| Tool | Location | Purpose |
+|------|----------|---------|
+| Reservation Janitor | `apps/worker` | Auto-releases stuck reservations (every 30m) |
+| Reconciliation CLI | `apps/api/scripts/reconciliation.js` | Audit & repair balance/ledger drift |
 
 ```bash
-# Check for balance/ledger drift across all users
+# Check for drift across all users
 node scripts/reconciliation.js --mode check
 
-# Explain detailed transaction history for a specific user
+# Explain transaction history for a specific user
 node scripts/reconciliation.js --mode explain --userId 123
 
-# Repair drift using non-destructive compensating ledger entries
+# Repair drift with compensating ledger entries
 node scripts/reconciliation.js --mode repair --userId 123
 ```
 
 ---
 
 ## 📮 Durable Outbox Pattern
-The platform ensures $100\%$ durability for all external side effects (Event Bus, Socket.IO) using the **Transactional Outbox Pattern**.
 
-### Core Invariants
-- **Atomic Side-Effects**: Side effects (e.g., `job.completed`) are recorded in the `outbox_events` table within the same transaction as the business state update.
-- **At-Least-Once Delivery**: A dedicated `OutboxDispatcher` polls the table and publishes events to RabbitMQ. If the API crashes mid-broadcast, the dispatcher ensures delivery upon restart.
-- **Concurrent Polling**: Uses `SELECT FOR UPDATE SKIP LOCKED` to allow multiple API instances to safely process the outbox without duplication.
-- **Self-Healing**: Automatically reclaims events that are "stuck" in processing due to worker crashes.
+All external side effects (Event Bus, Socket.IO) use the **Transactional Outbox Pattern** for 100% durability.
+
+- **Atomic Side-Effects** — events recorded in `outbox_events` within the same transaction as business state updates
+- **At-Least-Once Delivery** — `OutboxDispatcher` polls and publishes to RabbitMQ; survives API crashes
+- **Concurrent Polling** — `SELECT FOR UPDATE SKIP LOCKED` for safe multi-instance processing
+- **Self-Healing** — automatically reclaims events stuck in processing
 
 ---
 
@@ -75,7 +83,7 @@ The platform ensures $100\%$ durability for all external side effects (Event Bus
 ┌──────────────────────────────────────────────────────────────┐
 │                  WEB (port 5173)                              │
 │  React + Vite + Shadcn/ui                                     │
-│  Login page · Dashboard · Upload/Process modals               │
+│  Login · Dashboard · Upload/Process modals · Admin panel      │
 │  Nginx reverse proxy → API (/api/*, /socket.io/*)             │
 └──────────────┬───────────────────────────────────────────────┘
                │
@@ -103,17 +111,19 @@ The platform ensures $100\%$ durability for all external side effects (Event Bus
 ## 📁 Project Structure
 
 ```
-video-editor/
+convertix/
 ├── apps/
 │   ├── api/                    # Express API service
 │   │   ├── controllers/        # Auth, video, image controllers
 │   │   ├── routes/             # Route definitions
-│   │   ├── middleware/         # Auth, error handling
+│   │   ├── middleware/         # Auth, CSRF, error handling
 │   │   ├── websocket/         # Socket.IO handler
+│   │   ├── scripts/           # Admin seed, reconciliation CLI
 │   │   └── server.js          # Entry point
 │   │
 │   ├── worker/                 # Background job processor
 │   │   ├── queue/BullQueue.js  # Job processors (5 types)
+│   │   ├── lib/               # Storage cleanup, reservation janitor
 │   │   └── worker.js          # Entry point
 │   │
 │   └── web/                    # React frontend
@@ -121,9 +131,10 @@ video-editor/
 │       │   ├── api/client.js   # API client
 │       │   ├── context/        # Auth context
 │       │   ├── hooks/          # Socket.IO hook
-│       │   ├── pages/          # Login, Dashboard
-│       │   ├── components/     # Navbar, MediaGrid, Modals
+│       │   ├── pages/          # Login, Dashboard, Profile, Billing, Admin
+│       │   ├── components/     # ConvertixLogo, Navbar, MediaGrid, Modals
 │       │   └── components/ui/  # Shadcn/ui components
+│       ├── public/             # Convertix favicon SVG
 │       ├── nginx.conf          # Production reverse proxy
 │       └── Dockerfile          # Frontend Docker build
 │
@@ -131,7 +142,8 @@ video-editor/
 │   ├── shared/                 # Shared modules (@video-editor/shared)
 │   │   ├── config/             # Environment configuration
 │   │   ├── database/           # PostgreSQL pool + services
-│   │   ├── lib/                # FFmpeg wrapper, utilities
+│   │   ├── outbox/             # Outbox dispatcher + repository
+│   │   ├── lib/                # FFmpeg wrapper, utilities, logger
 │   │   └── telemetry/          # OpenTelemetry setup
 │   │
 │   └── database/               # Schema (@video-editor/database)
@@ -143,16 +155,6 @@ video-editor/
 └── package.json                # Workspace root
 ```
 
-### Workspace Packages
-
-| Package | Name | Purpose |
-|---------|------|---------|
-| `apps/api` | `@video-editor/api` | Express HTTP API + WebSocket |
-| `apps/worker` | `@video-editor/worker` | Bull queue job processor |
-| `apps/web` | `@video-editor/web` | React + Vite frontend |
-| `packages/shared` | `@video-editor/shared` | Config, DB, FFmpeg, telemetry |
-| `packages/database` | `@video-editor/database` | SQL schema |
-
 ---
 
 ## 🚀 Quick Start
@@ -161,16 +163,17 @@ video-editor/
 
 ```bash
 git clone <repository-url>
-cd video-editor
+cd convertix
 
 # Build and start all services
-docker-compose up --build -d
+npm run docker:build
+npm run docker:up
 
 # Check status
 docker-compose ps
 
 # View logs
-docker-compose logs -f
+npm run docker:logs
 ```
 
 **Access Points:**
@@ -178,6 +181,8 @@ docker-compose logs -f
 - API: http://localhost:3000
 - PostgreSQL: localhost:5432
 - Redis: localhost:6379
+
+**Default Admin Account:** `admin / password123`
 
 ### Option 2: Local Development
 
@@ -189,8 +194,9 @@ npm install
 createdb video_editor
 psql video_editor < packages/database/schema.sql
 
-# 3. Start Redis
+# 3. Start Redis & RabbitMQ
 redis-server
+# RabbitMQ must be running on amqp://localhost:5672
 
 # 4. Configure environment
 cp .env.example .env
@@ -213,32 +219,40 @@ npm run dev:web      # Frontend only (port 5173)
 ### Authentication
 
 ```http
-POST /api/auth/login        # Login (returns session cookie)
-POST /api/auth/logout       # Logout (clears session)
-GET  /api/auth/user         # Get current user info
-PUT  /api/auth/user         # Update user profile
+POST /api/auth/register       # Register new account
+POST /api/auth/login          # Login (returns session cookie)
+POST /api/auth/logout         # Logout (clears session)
+GET  /api/auth/user           # Get current user info
+PUT  /api/auth/user           # Update user profile
 ```
 
 ### Videos
 
 ```http
-GET  /api/videos                  # List all videos
+GET  /api/videos                  # List user's videos
 POST /api/videos/upload           # Upload video (octet-stream)
 POST /api/videos/resize           # Resize video (queued)
 POST /api/videos/convert          # Convert format (queued)
-POST /api/videos/extract-audio    # Extract audio (queued)
-GET  /api/videos/asset            # Stream video asset
+POST /api/videos/extract-audio    # Extract audio (synchronous)
+GET  /api/videos/asset            # Stream/preview video asset
 ```
 
 ### Images
 
 ```http
-GET  /api/images                  # List all images
+GET  /api/images                  # List user's images
 POST /api/images/upload           # Upload image (octet-stream)
 POST /api/images/crop             # Crop image (queued)
 POST /api/images/resize           # Resize image (queued)
 POST /api/images/convert          # Convert format (queued)
-GET  /api/images/asset            # Stream image asset
+GET  /api/images/asset            # Stream/preview image asset
+```
+
+### Admin
+
+```http
+GET  /api/admin/users             # List all users (admin only)
+GET  /api/admin/stats             # Platform analytics (admin only)
 ```
 
 ### WebSocket Events
@@ -259,13 +273,12 @@ socket.on('job:failed',    (data) => { /* { jobId, videoId, error } */ });
 ## 🐳 Docker Commands
 
 ```bash
-docker-compose up --build -d        # Build and start
+npm run docker:build               # Build all images
+npm run docker:up                  # Start all containers
+npm run docker:down                # Stop all containers
+npm run docker:logs                # Tail all logs
+npm run docker:clean               # Stop + delete volumes
 docker-compose up -d --scale worker=5  # Scale workers
-docker-compose logs -f              # All logs
-docker-compose logs -f api          # API logs
-docker-compose logs -f web          # Frontend logs
-docker-compose down                 # Stop
-docker-compose down -v              # Stop + delete volumes
 ```
 
 ### Docker Services
@@ -277,23 +290,7 @@ docker-compose down -v              # Stop + delete volumes
 | worker (×2) | video-editor-worker-N | — | node:18-alpine + ffmpeg |
 | db | video-editor-db | 5432 | postgres:15-alpine |
 | redis | video-editor-redis | 6379 | redis:7-alpine |
-
----
-
-## 📦 NPM Scripts
-
-```bash
-npm run dev              # Start all services (Turborepo)
-npm run dev:api          # API with hot-reload
-npm run dev:worker       # Worker with hot-reload
-npm run dev:web          # Frontend dev server
-npm run build            # Build all packages
-npm run docker:build     # Build Docker images
-npm run docker:up        # Start Docker stack
-npm run docker:down      # Stop Docker stack
-npm run docker:logs      # View all logs
-npm run docker:clean     # Stop + remove volumes
-```
+| rabbitmq | video-editor-rabbitmq | 5672 | rabbitmq:3-alpine |
 
 ---
 
@@ -318,6 +315,9 @@ DB_POOL_SIZE=20
 REDIS_HOST=localhost
 REDIS_PORT=6379
 
+# RabbitMQ
+RABBITMQ_URL=amqp://localhost:5672
+
 # Queue
 QUEUE_CONCURRENCY=5
 
@@ -335,6 +335,7 @@ OTEL_ENABLED=false
 | API | Express 4.18, Socket.IO 4.8 |
 | Database | PostgreSQL 15 |
 | Queue | Bull 4.16, Redis 7 |
+| Event Bus | RabbitMQ 3 |
 | Processing | FFmpeg |
 | Auth | bcrypt, HttpOnly cookies |
 | Monorepo | Turborepo, npm workspaces |
@@ -347,10 +348,13 @@ OTEL_ENABLED=false
 
 | Table | Purpose |
 |-------|---------|
-| `users` | User accounts (username, email, password_hash, tier) |
+| `users` | User accounts (username, email, password_hash, tier, credits) |
 | `sessions` | Session tokens (token, user_id, expires_at) |
-| `videos` | Video/image metadata (dimensions, format, paths) |
-| `video_operations` | Processing operations (status, parameters, result) |
+| `videos` | Video metadata (dimensions, format, file size) |
+| `images` | Image metadata (dimensions, format, file size) |
+| `video_operations` | Processing operations with state machine (pending → completed/failed) |
+| `credit_transactions` | Immutable credit ledger (reservation, debit_capture, refund) |
+| `outbox_events` | Durable outbox for transactional side effects |
 | `job_history` | Job execution history (duration, timestamps) |
 
 ---
@@ -364,10 +368,13 @@ pg_isready -h localhost -p 5432
 # Redis connection
 redis-cli ping
 
+# RabbitMQ connection
+curl -s http://localhost:15672/api/healthchecks/node
+
 # FFmpeg check
 ffmpeg -version
 
-# Port conflicts
+# Port conflicts (Windows)
 netstat -ano | findstr :3000
 netstat -ano | findstr :5173
 ```
@@ -384,4 +391,4 @@ ISC
 
 ---
 
-**Built with ❤️ using Node.js, React, and Turborepo**
+**Built with ❤️ using Node.js, React, FFmpeg, and Turborepo**
