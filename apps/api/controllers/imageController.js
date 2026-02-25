@@ -7,6 +7,7 @@ const stream = require("stream");
 const pipeline = promisify(stream.pipeline);
 
 const imageService = require("@video-editor/shared/database/services/imageService");
+const { transaction } = require("@video-editor/shared/database/db");
 const FFOriginal = require("@video-editor/shared/lib/FF");
 const util = require("@video-editor/shared/lib/util");
 const createLogger = require("@video-editor/shared/lib/logger");
@@ -214,7 +215,7 @@ const cropImage = async (req, res) => {
       const op = await imageService.addOperation(imageId, {
         type: 'crop',
         status: 'pending',
-        parameters: { x: parseInt(cropX), y: parseInt(cropY), width: parseInt(cropWidth), height: parseInt(cropHeight) }
+        parameters: { x: parseInt(cropX), y: parseInt(cropY), width: parseInt(width), height: parseInt(height) }
       }, client);
 
       await userService.reserveCredits(req.userId, 1, `op-${op.id}`, client);
@@ -230,8 +231,8 @@ const cropImage = async (req, res) => {
         imageId,
         x: parseInt(cropX),
         y: parseInt(cropY),
-        width: parseInt(cropWidth),
-        height: parseInt(cropHeight),
+        width: parseInt(width),
+        height: parseInt(height),
         userId: req.userId,
         operationId: operation.id
       });

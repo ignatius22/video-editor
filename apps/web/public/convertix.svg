@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <linearGradient id="fg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#818cf8"/>
+      <stop offset="50%" stop-color="#6366f1"/>
+      <stop offset="100%" stop-color="#4f46e5"/>
+    </linearGradient>
+    <linearGradient id="ag" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#a5b4fc"/>
+      <stop offset="100%" stop-color="#6366f1"/>
+    </linearGradient>
+  </defs>
+  <!-- Background -->
+  <circle cx="32" cy="32" r="30" fill="hsl(240,10%,9%)"/>
+  <circle cx="32" cy="32" r="30" stroke="url(#fg)" stroke-width="1.5" stroke-opacity="0.4" fill="none"/>
+  <!-- Conversion arrows -->
+  <path d="M36 18 A14 14 0 0 1 46 32" stroke="url(#ag)" stroke-width="3" stroke-linecap="round" fill="none"/>
+  <path d="M44 27 L46 32 L41 31" fill="url(#ag)"/>
+  <path d="M28 46 A14 14 0 0 1 18 32" stroke="url(#fg)" stroke-width="3" stroke-linecap="round" fill="none"/>
+  <path d="M20 37 L18 32 L23 33" fill="url(#fg)"/>
+  <!-- Central diamond -->
+  <rect x="26" y="26" width="12" height="12" rx="2" fill="url(#fg)" transform="rotate(45 32 32)"/>
+  <!-- Processing dots -->
+  <circle cx="32" cy="19" r="1.5" fill="#a5b4fc"/>
+  <circle cx="45" cy="32" r="1.5" fill="#c4b5fd"/>
+  <circle cx="32" cy="45" r="1.5" fill="#818cf8"/>
+  <circle cx="19" cy="32" r="1.5" fill="#a5b4fc"/>
+</svg>
