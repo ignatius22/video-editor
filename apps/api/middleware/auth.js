@@ -8,6 +8,7 @@ const authenticate = async (req, res, next) => {
   try {
     // Extract token from cookie
     const cookieHeader = req.headers.cookie;
+    console.log('[Auth] Cookie Header:', cookieHeader ? 'Present' : 'Missing');
 
     if (!cookieHeader) {
       return res.status(401).json({ error: "Authentication required. Please log in." });
@@ -23,25 +24,32 @@ const authenticate = async (req, res, next) => {
     });
 
     const token = cookies.token;
+    console.log('[Auth] Token extracted:', token ? 'Yes' : 'No');
 
     if (!token) {
       return res.status(401).json({ error: "Authentication token missing." });
     }
 
     // Validate token
-    const user = await sessionService.validateToken(token);
+    try {
+      const user = await sessionService.validateToken(token);
+      console.log('[Auth] Token validation result:', user ? 'Valid' : 'Invalid');
 
-    if (!user) {
-      return res.status(401).json({ error: "Invalid or expired session. Please log in again." });
+      if (!user) {
+        return res.status(401).json({ error: "Invalid or expired session. Please log in again." });
+      }
+
+      // Attach user ID to request
+      req.userId = user.id;
+      req.user = user;
+
+      next();
+    } catch (validateError) {
+      console.error("[Auth] validateToken failed:", validateError.message);
+      throw validateError;
     }
-
-    // Attach user ID to request
-    req.userId = user.id;
-    req.user = user;
-
-    next();
   } catch (error) {
-    console.error("[API] Authentication error:", error);
+    console.error("[API] Authentication error:", error.message, error.stack);
     return res.status(500).json({ error: "Authentication failed." });
   }
 };

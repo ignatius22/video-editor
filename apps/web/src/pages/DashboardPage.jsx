@@ -144,50 +144,71 @@ export default function DashboardPage() {
       <Navbar />
       <Toaster position="top-right" richColors closeButton />
 
-      <main className="mx-auto max-w-7xl px-4 sm:px-6 py-6 space-y-6">
+      <main className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-10 space-y-10">
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">Media Dashboard</h1>
-            <p className="text-sm text-muted-foreground mt-1">
-              Upload, process, and manage your videos and images.
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 animate-in-fade">
+          <div className="space-y-1">
+            <h1 className="text-4xl font-extrabold tracking-tight text-foreground sm:text-5xl uppercase">
+              Media <span className="text-primary italic">Studio</span>
+            </h1>
+            <p className="text-base text-muted-foreground font-medium max-w-2xl">
+              The all-in-one workstation to upload, transform, and manage your high-quality assets with precision.
             </p>
           </div>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={fetchData} disabled={loading}>
-              <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
-              Refresh
+          <div className="flex items-center gap-3">
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={fetchData} 
+              disabled={loading}
+              className="rounded-xl border-border/50 hover:bg-muted font-bold uppercase tracking-widest text-[10px]"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 mr-2 ${loading ? 'animate-spin text-primary' : ''}`} />
+              Sync Library
+            </Button>
+            <Button 
+              onClick={() => openUpload(tab === 'videos' ? 'video' : 'image')} 
+              size="sm"
+              className="rounded-xl font-bold uppercase tracking-widest text-[10px] shadow-lg shadow-primary/20 transition-all hover:scale-105 active:scale-95 px-5 bg-primary hover:bg-primary/90"
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              Upload {tab === 'videos' ? 'Video' : 'Image'}
             </Button>
           </div>
         </div>
 
         {/* Tabs */}
-        <Tabs value={tab} onValueChange={setTab} className="space-y-4">
-          <div className="flex items-center justify-between">
-            <TabsList>
-              <TabsTrigger value="videos" className="gap-1.5">
-                <FileVideo className="h-4 w-4" />
-                Videos
-                {videos.length > 0 && (
-                  <span className="ml-1 rounded-full bg-muted px-2 py-0.5 text-xs">{videos.length}</span>
-                )}
+        <Tabs value={tab} onValueChange={setTab} className="space-y-6">
+          <div className="flex items-center justify-between border-b border-border/50 pb-px">
+            <TabsList className="bg-transparent h-auto p-0 gap-8">
+              <TabsTrigger 
+                value="videos" 
+                className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:text-primary border-b-2 border-transparent data-[state=active]:border-primary rounded-none px-0 py-3 gap-2.5 font-bold transition-all text-muted-foreground hover:text-foreground"
+              >
+                <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center group-data-[state=active]:bg-primary/10 transition-colors">
+                  <FileVideo className="h-4.5 w-4.5" />
+                </div>
+                <div className="flex flex-col items-start leading-none">
+                  <span className="text-sm">Video Library</span>
+                  <span className="text-[10px] font-bold opacity-60 uppercase tracking-tighter mt-1">{videos.length} Assets</span>
+                </div>
               </TabsTrigger>
-              <TabsTrigger value="images" className="gap-1.5">
-                <FileImage className="h-4 w-4" />
-                Images
-                {images.length > 0 && (
-                  <span className="ml-1 rounded-full bg-muted px-2 py-0.5 text-xs">{images.length}</span>
-                )}
+              <TabsTrigger 
+                value="images" 
+                className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:text-primary border-b-2 border-transparent data-[state=active]:border-primary rounded-none px-0 py-3 gap-2.5 font-bold transition-all text-muted-foreground hover:text-foreground"
+              >
+                <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center group-data-[state=active]:bg-primary/10 transition-colors">
+                  <FileImage className="h-4.5 w-4.5" />
+                </div>
+                <div className="flex flex-col items-start leading-none">
+                  <span className="text-sm">Image Gallery</span>
+                  <span className="text-[10px] font-bold opacity-60 uppercase tracking-tighter mt-1">{images.length} Assets</span>
+                </div>
               </TabsTrigger>
             </TabsList>
-
-            <Button onClick={() => openUpload(tab === 'videos' ? 'video' : 'image')} size="sm">
-              <Plus className="h-4 w-4 mr-1.5" />
-              Upload {tab === 'videos' ? 'Video' : 'Image'}
-            </Button>
           </div>
 
-          <TabsContent value="videos" className="mt-0">
+          <TabsContent value="videos" className="mt-0 outline-none">
             <MediaGrid
               items={videos}
               type="video"
@@ -205,7 +226,7 @@ export default function DashboardPage() {
             />
           </TabsContent>
 
-          <TabsContent value="images" className="mt-0">
+          <TabsContent value="images" className="mt-0 outline-none">
             <MediaGrid
               items={images}
               type="image"

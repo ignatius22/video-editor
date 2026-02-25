@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
+import { ConvertixLoader } from '@/components/ConvertixLogo';
 import LoginPage from '@/pages/LoginPage';
 import RegisterPage from '@/pages/RegisterPage';
 import DashboardPage from '@/pages/DashboardPage';
@@ -15,11 +16,7 @@ function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
 
   if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-      </div>
-    );
+    return <ConvertixLoader message="Preparing your workspace..." size={48} />;
   }
 
   if (!user) return <Navigate to="/login" replace />;
@@ -30,11 +27,7 @@ function AdminRoute({ children }) {
   const { user, loading } = useAuth();
 
   if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-      </div>
-    );
+    return <ConvertixLoader message="Verifying admin access..." size={48} />;
   }
 
   if (!user) return <Navigate to="/login" replace />;
@@ -45,15 +38,9 @@ function AdminRoute({ children }) {
 function PublicRoute({ children }) {
   const { user, loading } = useAuth();
 
-  if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-      </div>
-    );
-  }
-
-  if (user) return <Navigate to="/" replace />;
+  // Don't block rendering — show the page immediately.
+  // If the user IS already authenticated, redirect once we know.
+  if (!loading && user) return <Navigate to="/" replace />;
   return children;
 }
 
