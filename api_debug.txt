@@ -1,0 +1,173 @@
+﻿[Telemetry] OpenTelemetry initialized for video-editor-api
+[Telemetry] Exporting to: host.docker.internal:4317
+[Telemetry] Sampling probability: 1
+{"level":"INFO","time":"2026-02-25T07:32:00.227Z","service":"queue","env":"production","concurrency":5,"redis":"redis:6379","msg":"BullQueue initialized"}
+[EventBus] Connecting to RabbitMQ: amqp://rabbitmq:5672
+{"level":"INFO","time":"2026-02-25T07:32:00.248Z","service":"api","env":"production","port":"3000","env":"production","db":"db:5432","redis":"redis:6379","websocket":true,"msg":"VIDEO EDITOR API SERVICE STARTED"}
+[EventBus] Connected to RabbitMQ successfully
+Γ£à Database connected successfully at 2026-02-25T07:32:00.448Z
+Γ£à Database connected successfully at 2026-02-25T07:32:00.450Z
+{"level":"INFO","time":"2026-02-25T07:32:00.471Z","service":"queue","env":"production","restoredCount":0,"skippedCount":0,"msg":"Incomplete jobs restoration complete"}
+[EventBus] Subscribed to: job.* on queue: api.job.*
+{"level":"INFO","time":"2026-02-25T07:32:00.477Z","service":"websocket","env":"production","msg":"WebSocket socket handler initialized"}
+{"level":"INFO","time":"2026-02-25T07:32:00.478Z","service":"outbox-dispatcher","env":"production","instanceId":"926e49e1-7139-4b60-8133-59f83d29b08c","batchSize":10,"pollingInterval":1000,"msg":"OutboxDispatcher initialized"}
+{"level":"INFO","time":"2026-02-25T07:32:00.480Z","service":"api","env":"production","msg":"Bull queue and Outbox Dispatcher initialized"}
+{"level":"INFO","time":"2026-02-25T07:32:00.480Z","service":"outbox-dispatcher","env":"production","msg":"OutboxDispatcher started"}
+[Auth] Cookie Header: Present
+[Auth] Token extracted: Yes
+[Auth] Token validation result: Valid
+{"level":"INFO","time":"2026-02-25T07:32:11.247Z","service":"api","env":"production","method":"GET","url":"/user","status":200,"duration":"22ms","ip":"::ffff:172.19.0.1","msg":"HTTP Request"}
+[Auth] Cookie Header: Present
+[Auth] Token extracted: Yes
+[Auth] Token validation result: Valid
+{"level":"INFO","time":"2026-02-25T07:32:11.281Z","service":"api","env":"production","method":"GET","url":"/user","status":304,"duration":"13ms","ip":"::ffff:172.19.0.1","msg":"HTTP Request"}
+[Auth] Cookie Header: Present
+[Auth] Token extracted: Yes
+[Auth] Token validation result: Valid
+{"level":"INFO","time":"2026-02-25T07:32:11.686Z","service":"api","env":"production","method":"GET","url":"/","status":304,"duration":"58ms","ip":"::ffff:172.19.0.1","msg":"HTTP Request"}
+{"level":"INFO","time":"2026-02-25T07:32:11.721Z","service":"websocket","env":"production","socketId":"cGwlnISCpN5c5TluAAAB","msg":"WebSocket client connected"}
+[Auth] Cookie Header: Present
+[Auth] Token extracted: Yes
+[Auth] Cookie Header: Present
+[Auth] Token extracted: Yes
+[Auth] Token validation result: Valid
+{"level":"INFO","time":"2026-02-25T07:32:11.752Z","service":"api","env":"production","method":"GET","url":"/","status":304,"duration":"14ms","ip":"::ffff:172.19.0.1","msg":"HTTP Request"}
+[Auth] Token validation result: Valid
+{"level":"INFO","time":"2026-02-25T07:32:11.776Z","service":"api","env":"production","method":"GET","url":"/","status":304,"duration":"51ms","ip":"::ffff:172.19.0.1","msg":"HTTP Request"}
+[Auth] Cookie Header: Present
+[Auth] Token extracted: Yes
+[Auth] Token validation result: Valid
+{"level":"INFO","time":"2026-02-25T07:32:11.799Z","service":"api","env":"production","method":"GET","url":"/","status":304,"duration":"9ms","ip":"::ffff:172.19.0.1","msg":"HTTP Request"}
+{"level":"INFO","time":"2026-02-25T07:32:44.927Z","service":"websocket","env":"production","socketId":"cGwlnISCpN5c5TluAAAB","reason":"client namespace disconnect","msg":"WebSocket client disconnected"}
+[Auth] Cookie Header: Present
+[Auth] Token extracted: Yes
+[Auth] Cookie Header: Present
+[Auth] Token extracted: Yes
+[Auth] Token validation result: Valid
+[Auth] Cookie Header: Present
+[Auth] Token extracted: Yes
+[Auth] Token validation result: Valid
+[Auth] Token validation result: Valid
+[Auth] Cookie Header: Present
+[Auth] Token extracted: Yes
+[Auth] Token validation result: Valid
+{"level":"INFO","time":"2026-02-25T07:32:45.115Z","service":"api","env":"production","method":"GET","url":"/users?limit=10&offset=0","status":304,"duration":"114ms","ip":"::ffff:172.19.0.1","msg":"HTTP Request"}
+[Auth] Cookie Header: Present
+[Auth] Token extracted: Yes
+[Auth] Token validation result: Valid
+[Auth] Cookie Header: Present
+[Auth] Token extracted: Yes
+[Auth] Token validation result: Valid
+{"level":"INFO","time":"2026-02-25T07:32:45.168Z","service":"api","env":"production","method":"GET","url":"/users?limit=10&offset=0","status":304,"duration":"26ms","ip":"::ffff:172.19.0.1","msg":"HTTP Request"}
+{"level":"INFO","time":"2026-02-25T07:32:45.230Z","service":"api","env":"production","method":"GET","url":"/stats","status":200,"duration":"221ms","ip":"::ffff:172.19.0.1","msg":"HTTP Request"}
+[Auth] Cookie Header: Present
+[Auth] Token extracted: Yes
+[Auth] Token validation result: Valid
+[Auth] Cookie Header: Present
+[Auth] Token extracted: Yes
+[Auth] Token validation result: Valid
+{"level":"INFO","time":"2026-02-25T07:32:45.282Z","service":"api","env":"production","method":"GET","url":"/stats","status":200,"duration":"33ms","ip":"::ffff:172.19.0.1","msg":"HTTP Request"}
+[Auth] Cookie Header: Present
+[Auth] Token extracted: Yes
+[Auth] Cookie Header: Present
+[Auth] Token extracted: Yes
+{"level":"INFO","time":"2026-02-25T07:34:14.607Z","service":"websocket","env":"production","socketId":"W_VQWVqd8oJvgJ6-AAAD","msg":"WebSocket client connected"}
+[Auth] Token validation result: Valid
+{"level":"INFO","time":"2026-02-25T07:34:14.642Z","service":"api","env":"production","method":"GET","url":"/","status":304,"duration":"58ms","ip":"::ffff:172.19.0.1","msg":"HTTP Request"}
+[Auth] Cookie Header: Present
+[Auth] Token extracted: Yes
+[Auth] Token validation result: Valid
+{"level":"INFO","time":"2026-02-25T07:34:14.669Z","service":"api","env":"production","method":"GET","url":"/","status":304,"duration":"11ms","ip":"::ffff:172.19.0.1","msg":"HTTP Request"}
+[Auth] Token validation result: Valid
+{"level":"INFO","time":"2026-02-25T07:34:14.687Z","service":"api","env":"production","method":"GET","url":"/","status":304,"duration":"84ms","ip":"::ffff:172.19.0.1","msg":"HTTP Request"}
+[Auth] Cookie Header: Present
+[Auth] Token extracted: Yes
+[Auth] Token validation result: Valid
+{"level":"INFO","time":"2026-02-25T07:34:14.714Z","service":"api","env":"production","method":"GET","url":"/","status":304,"duration":"11ms","ip":"::ffff:172.19.0.1","msg":"HTTP Request"}
+[Auth] Cookie Header: Present
+[Auth] Token extracted: Yes
+[Auth] Token validation result: Valid
+{"level":"INFO","time":"2026-02-25T07:35:22.276Z","service":"api","env":"production","method":"POST","url":"/upload","status":201,"duration":"5525ms","ip":"::ffff:172.19.0.1","msg":"HTTP Request"}
+[Auth] Cookie Header: Present
+[Auth] Token extracted: Yes
+[Auth] Cookie Header: Present
+[Auth] Token extracted: Yes
+[Auth] Token validation result: Valid
+{"level":"INFO","time":"2026-02-25T07:35:22.390Z","service":"api","env":"production","method":"GET","url":"/","status":200,"duration":"57ms","ip":"::ffff:172.19.0.1","msg":"HTTP Request"}
+[Auth] Token validation result: Valid
+{"level":"INFO","time":"2026-02-25T07:35:22.545Z","service":"api","env":"production","method":"GET","url":"/","status":304,"duration":"188ms","ip":"::ffff:172.19.0.1","msg":"HTTP Request"}
+{"level":"INFO","time":"2026-02-25T07:35:22.581Z","service":"websocket","env":"production","socketId":"W_VQWVqd8oJvgJ6-AAAD","resourceId":"f60a9414","msg":"Client subscribed to resource updates"}
+[Auth] Cookie Header: Present
+[Auth] Token extracted: Yes
+[Auth] Token validation result: Valid
+{"level":"INFO","time":"2026-02-25T07:35:22.793Z","service":"api","env":"production","method":"GET","url":"/asset?videoId=f60a9414&type=thumbnail","status":200,"duration":"61ms","ip":"::ffff:172.19.0.1","msg":"HTTP Request"}
+[Auth] Cookie Header: Present
+[Auth] Token extracted: Yes
+[Auth] Token validation result: Valid
+{"level":"ERROR","time":"2026-02-25T07:35:42.468Z","service":"api","env":"production","err":"transaction is not defined","stack":"ReferenceError: transaction is not defined\n    at convertVideo (/app/apps/api/controllers/videoController.js:349:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)","userId":73,"videoId":"f60a9414","msg":"Convert video error"}
+{"level":"INFO","time":"2026-02-25T07:35:42.473Z","service":"api","env":"production","method":"POST","url":"/convert","status":500,"duration":"46ms","ip":"::ffff:172.19.0.1","msg":"HTTP Request"}
+{"level":"INFO","time":"2026-02-25T07:37:24.545Z","service":"websocket","env":"production","socketId":"W_VQWVqd8oJvgJ6-AAAD","reason":"client namespace disconnect","msg":"WebSocket client disconnected"}
+[Auth] Cookie Header: Present
+[Auth] Token extracted: Yes
+[Auth] Token validation result: Valid
+[Auth] Cookie Header: Present
+[Auth] Token extracted: Yes
+[Auth] Token validation result: Valid
+{"level":"INFO","time":"2026-02-25T07:37:24.626Z","service":"api","env":"production","method":"GET","url":"/transactions?limit=50&offset=0","status":200,"duration":"17ms","ip":"::ffff:172.19.0.1","msg":"HTTP Request"}
+[Auth] Cookie Header: Present
+[Auth] Token extracted: Yes
+[Auth] Token validation result: Valid
+[Auth] Cookie Header: Present
+[Auth] Token extracted: Yes
+[Auth] Token validation result: Valid
+{"level":"INFO","time":"2026-02-25T07:37:24.650Z","service":"api","env":"production","method":"GET","url":"/transactions?limit=50&offset=0","status":304,"duration":"10ms","ip":"::ffff:172.19.0.1","msg":"HTTP Request"}
+[Auth] Cookie Header: Present
+[Auth] Token extracted: Yes
+[Auth] Token validation result: Valid
+[Auth] Cookie Header: Present
+[Auth] Token extracted: Yes
+[Auth] Token validation result: Valid
+{"level":"INFO","time":"2026-02-25T07:37:44.011Z","service":"api","env":"production","method":"GET","url":"/transactions?limit=50&offset=0","status":304,"duration":"11ms","ip":"::ffff:172.19.0.1","msg":"HTTP Request"}
+[Auth] Cookie Header: Present
+[Auth] Token extracted: Yes
+[Auth] Token validation result: Valid
+[Auth] Cookie Header: Present
+[Auth] Token extracted: Yes
+{"level":"INFO","time":"2026-02-25T07:37:53.990Z","service":"api","env":"production","method":"GET","url":"/","status":304,"duration":"31ms","ip":"::ffff:172.19.0.1","msg":"HTTP Request"}
+{"level":"INFO","time":"2026-02-25T07:37:54.000Z","service":"websocket","env":"production","socketId":"U1thQlAgOr6pK8xxAAAG","msg":"WebSocket client connected"}
+[Auth] Cookie Header: Present
+[Auth] Token extracted: Yes
+[Auth] Token validation result: Valid
+{"level":"INFO","time":"2026-02-25T07:37:54.031Z","service":"api","env":"production","method":"GET","url":"/","status":304,"duration":"22ms","ip":"::ffff:172.19.0.1","msg":"HTTP Request"}
+[Auth] Token validation result: Valid
+{"level":"INFO","time":"2026-02-25T07:37:54.092Z","service":"api","env":"production","method":"GET","url":"/","status":304,"duration":"118ms","ip":"::ffff:172.19.0.1","msg":"HTTP Request"}
+{"level":"INFO","time":"2026-02-25T07:37:54.108Z","service":"websocket","env":"production","socketId":"U1thQlAgOr6pK8xxAAAG","resourceId":"f60a9414","msg":"Client subscribed to resource updates"}
+[Auth] Cookie Header: Present
+[Auth] Token extracted: Yes
+[Auth] Token validation result: Valid
+{"level":"INFO","time":"2026-02-25T07:37:54.127Z","service":"api","env":"production","method":"GET","url":"/","status":304,"duration":"13ms","ip":"::ffff:172.19.0.1","msg":"HTTP Request"}
+{"level":"INFO","time":"2026-02-25T07:37:54.165Z","service":"websocket","env":"production","socketId":"U1thQlAgOr6pK8xxAAAG","resourceId":"f60a9414","msg":"Client subscribed to resource updates"}
+{"level":"INFO","time":"2026-02-25T07:38:06.810Z","service":"websocket","env":"production","socketId":"U1thQlAgOr6pK8xxAAAG","reason":"client namespace disconnect","msg":"WebSocket client disconnected"}
+[Auth] Cookie Header: Present
+[Auth] Token extracted: Yes
+[Auth] Token validation result: Valid
+{"level":"INFO","time":"2026-02-25T07:38:37.122Z","service":"api","env":"production","method":"GET","url":"/user","status":304,"duration":"9ms","ip":"::ffff:172.19.0.1","msg":"HTTP Request"}
+[Auth] Cookie Header: Present
+[Auth] Token extracted: Yes
+[Auth] Token validation result: Valid
+{"level":"INFO","time":"2026-02-25T07:38:37.466Z","service":"api","env":"production","method":"GET","url":"/user","status":304,"duration":"13ms","ip":"::ffff:172.19.0.1","msg":"HTTP Request"}
+[Auth] Cookie Header: Present
+[Auth] Token extracted: Yes
+[Auth] Token validation result: Valid
+[Auth] Cookie Header: Present
+[Auth] Token extracted: Yes
+{"level":"INFO","time":"2026-02-25T07:39:20.139Z","service":"api","env":"production","method":"GET","url":"/","status":304,"duration":"44ms","ip":"::ffff:172.19.0.1","msg":"HTTP Request"}
+{"level":"INFO","time":"2026-02-25T07:39:20.141Z","service":"websocket","env":"production","socketId":"jPRPiF2Q9ztQEVhDAAAJ","msg":"WebSocket client connected"}
+[Auth] Cookie Header: Present
+[Auth] Token extracted: Yes
+[Auth] Token validation result: Valid
+{"level":"INFO","time":"2026-02-25T07:39:20.173Z","service":"api","env":"production","method":"GET","url":"/","status":304,"duration":"14ms","ip":"::ffff:172.19.0.1","msg":"HTTP Request"}
+[Auth] Token validation result: Valid
+{"level":"INFO","time":"2026-02-25T07:39:20.209Z","service":"api","env":"production","method":"GET","url":"/","status":304,"duration":"86ms","ip":"::ffff:172.19.0.1","msg":"HTTP Request"}
+{"level":"INFO","time":"2026-02-25T07:39:20.220Z","service":"websocket","env":"production","socketId":"jPRPiF2Q9ztQEVhDAAAJ","resourceId":"f60a9414","msg":"Client subscribed to resource updates"}
+{"level":"INFO","time":"2026-02-25T07:39:20.224Z","service":"api","env":"production","method":"GET","url":"/","status":429,"duration":"1ms","ip":"::ffff:172.19.0.1","msg":"HTTP Request"}

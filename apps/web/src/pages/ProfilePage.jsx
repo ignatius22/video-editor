@@ -2,6 +2,7 @@ import React from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { User, Mail, Shield, Calendar, LogOut, Settings, Zap, ChevronLeft } from 'lucide-react';
 import { useNavigate, Link } from 'react-router-dom';
+import { Button } from '@/components/ui/button';
 
 export default function ProfilePage() {
   const { user, logout } = useAuth();
