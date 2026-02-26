@@ -139,14 +139,14 @@ convertix/
 │       └── Dockerfile          # Frontend Docker build
 │
 ├── packages/
-│   ├── shared/                 # Shared modules (@video-editor/shared)
+│   ├── shared/                 # Shared modules (@convertix/shared)
 │   │   ├── config/             # Environment configuration
 │   │   ├── database/           # PostgreSQL pool + services
 │   │   ├── outbox/             # Outbox dispatcher + repository
 │   │   ├── lib/                # FFmpeg wrapper, utilities, logger
 │   │   └── telemetry/          # OpenTelemetry setup
 │   │
-│   └── database/               # Schema (@video-editor/database)
+│   └── database/               # Schema (@convertix/database)
 │       └── schema.sql
 │
 ├── turbo.json                  # Turborepo pipeline config
@@ -285,12 +285,12 @@ docker-compose up -d --scale worker=5  # Scale workers
 
 | Service | Container | Port | Image |
 |---------|-----------|------|-------|
-| web | video-editor-web | 5173 → 80 | nginx:alpine |
-| api | video-editor-api | 3000 | node:18-alpine + ffmpeg |
-| worker (×2) | video-editor-worker-N | — | node:18-alpine + ffmpeg |
-| db | video-editor-db | 5432 | postgres:15-alpine |
-| redis | video-editor-redis | 6379 | redis:7-alpine |
-| rabbitmq | video-editor-rabbitmq | 5672 | rabbitmq:3-alpine |
+| web | convertix-web | 5173 → 80 | nginx:alpine |
+| api | convertix-api | 3000 | node:18-alpine + ffmpeg |
+| worker (×2) | convertix-worker-N | — | node:18-alpine + ffmpeg |
+| db | convertix-db | 5432 | postgres:15-alpine |
+| redis | convertix-redis | 6379 | redis:7-alpine |
+| rabbitmq | convertix-rabbitmq | 5672 | rabbitmq:3-alpine |
 
 ---
 

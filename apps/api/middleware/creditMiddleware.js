@@ -1,4 +1,4 @@
-const userService = require('@video-editor/shared/database/services/userService');
+const userService = require('@convertix/shared/database/services/userService');
 
 /**
  * Credit Check Middleware

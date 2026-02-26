@@ -1,8 +1,8 @@
 // CRITICAL: Initialize telemetry FIRST (before any other imports)
-const telemetry = require('@video-editor/shared/telemetry');
-const sdk = telemetry.initializeTelemetry('video-editor-api');
+const telemetry = require('@convertix/shared/telemetry');
+const sdk = telemetry.initializeTelemetry('convertix-api');
 
-const createLogger = require('@video-editor/shared/lib/logger');
+const createLogger = require('@convertix/shared/lib/logger');
 const logger = createLogger('api');
 
 const express = require('express');
@@ -13,7 +13,7 @@ const Redis = require('ioredis');
 const cors = require('cors');
 const path = require('path');
 
-const config = require('@video-editor/shared/config');
+const config = require('@convertix/shared/config');
 const authRoutes = require('./routes/authRoutes');
 const videoRoutes = require('./routes/videoRoutes');
 const imageRoutes = require('./routes/imageRoutes');
@@ -21,7 +21,7 @@ const billingRoutes = require('./routes/billingRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const { authenticate, adminOnly } = require('./middleware/auth');
 const errorHandler = require('./middleware/errorHandler');
-const { EventBus } = require('@video-editor/shared/eventBus');
+const { EventBus } = require('@convertix/shared/eventBus');
 const OutboxDispatcher = require('./lib/outboxDispatcher');
 const { 
   helmetConfig, 
@@ -106,12 +106,16 @@ let queue = null;
 if (process.env.NODE_ENV !== 'test') {
   (async () => {
     try {
-      const BullQueue = require('@video-editor/worker/queue/BullQueue');
+      const BullQueue = require('@convertix/worker/queue/BullQueue');
       queue = new BullQueue();
 
       // Initialize EventBus
       const eventBus = new EventBus(config.rabbitmq.url, 'api');
       await eventBus.connect(true);
+
+      // Inject queue into controllers
+      videoController.setQueue(queue);
+      imageController.setQueue(queue);
 
       // Initialize WebSocket handler
       const setupWebSockets = require('./websocket/socketHandler');

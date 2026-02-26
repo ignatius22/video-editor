@@ -1,4 +1,4 @@
-const { query } = require('@video-editor/database/db');
+const { query } = require('@convertix/database/db');
 
 async function migrate() {
   console.log('Starting SaaS transformation migration...');

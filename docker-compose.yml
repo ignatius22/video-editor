@@ -6,7 +6,7 @@ services:
     build:
       context: .
       target: api
-    container_name: video-editor-api
+    container_name: convertix-api
     ports:
       - "3000:3000"
     environment:
@@ -23,7 +23,7 @@ services:
       - RABBITMQ_URL=amqp://rabbitmq:5672
       # OpenTelemetry Configuration
       - OTEL_ENABLED=true
-      - OTEL_SERVICE_NAME=video-editor-api
+      - OTEL_SERVICE_NAME=convertix-api
       - OTEL_SERVICE_VERSION=2.0.0
       - OTEL_EXPORTER_OTLP_ENDPOINT=host.docker.internal:4317
       - OTEL_TRACE_SAMPLING_PROBABILITY=1.0
@@ -38,21 +38,21 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
-      - video-editor-network
+      - convertix-network
 
   # Web Frontend - React SPA served by nginx
   web:
     build:
       context: ./apps/web
       dockerfile: Dockerfile
-    container_name: video-editor-web
+    container_name: convertix-web
     ports:
       - "5173:80"
     depends_on:
       - api
     restart: unless-stopped
     networks:
-      - video-editor-network
+      - convertix-network
 
   # Worker Service - Background job processing
   worker:
@@ -72,7 +72,7 @@ services:
       - RABBITMQ_URL=amqp://rabbitmq:5672
       # OpenTelemetry Configuration
       - OTEL_ENABLED=true
-      - OTEL_SERVICE_NAME=video-editor-worker
+      - OTEL_SERVICE_NAME=convertix-worker
       - OTEL_SERVICE_VERSION=2.0.0
       - OTEL_EXPORTER_OTLP_ENDPOINT=host.docker.internal:4317
       - OTEL_TRACE_SAMPLING_PROBABILITY=1.0
@@ -89,12 +89,12 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
-      - video-editor-network
+      - convertix-network
 
   # PostgreSQL Database
   db:
     image: postgres:15-alpine
-    container_name: video-editor-db
+    container_name: convertix-db
     environment:
       - POSTGRES_DB=video_editor
       - POSTGRES_USER=postgres
@@ -106,12 +106,12 @@ services:
       - "5432:5432"
     restart: unless-stopped
     networks:
-      - video-editor-network
+      - convertix-network
 
   # Redis - Job queue
   redis:
     image: redis:7-alpine
-    container_name: video-editor-redis
+    container_name: convertix-redis
     command: redis-server --appendonly yes
     volumes:
       - redis_data:/data
@@ -119,18 +119,18 @@ services:
       - "6379:6379"
     restart: unless-stopped
     networks:
-      - video-editor-network
+      - convertix-network
 
   # RabbitMQ - Message Broker for Event Bus
   rabbitmq:
     image: rabbitmq:3-management-alpine
-    container_name: video-editor-rabbitmq
+    container_name: convertix-rabbitmq
     ports:
       - "5672:5672"   # AMQP
       - "15672:15672" # Management UI
     restart: unless-stopped
     networks:
-      - video-editor-network
+      - convertix-network
 
 volumes:
   postgres_data:
@@ -139,5 +139,5 @@ volumes:
     driver: local
 
 networks:
-  video-editor-network:
+  convertix-network:
     driver: bridge

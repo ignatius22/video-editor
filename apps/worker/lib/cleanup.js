@@ -1,10 +1,10 @@
 const path = require('node:path');
 const fs = require('node:fs/promises');
-const videoService = require('@video-editor/shared/database/services/videoService');
-const imageService = require('@video-editor/shared/database/services/imageService');
-const util = require('@video-editor/shared/lib/util');
-const config = require('@video-editor/shared/config');
-const createLogger = require('@video-editor/shared/lib/logger');
+const videoService = require('@convertix/shared/database/services/videoService');
+const imageService = require('@convertix/shared/database/services/imageService');
+const util = require('@convertix/shared/lib/util');
+const config = require('@convertix/shared/config');
+const createLogger = require('@convertix/shared/lib/logger');
 const logger = createLogger('cleanup');
 
 class StoragePruner {

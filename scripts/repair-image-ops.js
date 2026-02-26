@@ -1,4 +1,4 @@
-const db = require('@video-editor/shared/database/db');
+const db = require('@convertix/shared/database/db');
 const fs = require('fs');
 const path = require('path');
 const storagePath = '/app/storage';

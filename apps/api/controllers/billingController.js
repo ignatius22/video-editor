@@ -1,5 +1,5 @@
-const userService = require('@video-editor/shared/database/services/userService');
-const createLogger = require("@video-editor/shared/lib/logger");
+const userService = require('@convertix/shared/database/services/userService');
+const createLogger = require("@convertix/shared/lib/logger");
 const logger = createLogger('api');
 
 /**

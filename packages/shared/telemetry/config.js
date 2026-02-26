@@ -6,7 +6,7 @@
 module.exports = {
   enabled: process.env.OTEL_ENABLED === 'true',
 
-  serviceName: process.env.OTEL_SERVICE_NAME || 'video-editor',
+  serviceName: process.env.OTEL_SERVICE_NAME || 'convertix',
   serviceVersion: process.env.OTEL_SERVICE_VERSION || '2.0.0',
   environment: process.env.NODE_ENV || 'development',
 

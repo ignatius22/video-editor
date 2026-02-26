@@ -1,4 +1,4 @@
-const { query, close } = require('@video-editor/database/db');
+const { query, close } = require('@convertix/database/db');
 
 async function probe() {
   const types = [

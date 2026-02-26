@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# Video Editor Express - Quick Start Script
+# Convertix - Quick Start Script
 # This script helps you start the application quickly
 
 set -e
 
-echo "🎬 Video Editor Express - Quick Start"
+echo "🎬 Convertix - Quick Start"
 echo "======================================"
 echo ""
 
@@ -73,7 +73,7 @@ if [ -f "public/scripts.js" ]; then
     echo -e "${GREEN}✓ Built${NC}"
 else
     echo -e "${YELLOW}Building frontend...${NC}"
-    cd video-editor-client
+    cd apps/web
     npm install
     npm run build
     cd ..
@@ -84,7 +84,7 @@ echo ""
 echo -e "${GREEN}All checks passed!${NC}"
 echo ""
 echo "======================================"
-echo "Starting Video Editor Express..."
+echo "Starting Convertix..."
 echo "======================================"
 echo ""
 echo -e "Server will start on: ${GREEN}http://localhost:8060${NC}"

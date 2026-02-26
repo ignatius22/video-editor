@@ -1,4 +1,4 @@
-const db = require('@video-editor/shared/database/db');
+const db = require('@convertix/shared/database/db');
 
 async function migrateImages() {
   // Find records in 'videos' table that have image extensions

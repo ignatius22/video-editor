@@ -2,8 +2,8 @@
   "compilerOptions": {
     "baseUrl": ".",
     "paths": {
-      "@video-editor/shared/*": ["packages/shared/*"],
-      "@video-editor/worker/*": ["apps/worker/*"]
+      "@convertix/shared/*": ["packages/shared/*"],
+      "@convertix/worker/*": ["apps/worker/*"]
     },
     "checkJs": false,
     "maxNodeModuleJsDepth": 2

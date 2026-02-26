@@ -1,5 +1,5 @@
 {
-  "name": "@video-editor/shared",
+  "name": "@convertix/shared",
   "version": "1.0.0",
   "private": true,
   "main": "config/index.js",

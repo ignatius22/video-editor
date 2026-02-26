@@ -1,8 +1,8 @@
-const userService = require('@video-editor/shared/database/services/userService');
-const jobHistoryService = require("@video-editor/shared/database/services/jobHistoryService");
-const createLogger = require("@video-editor/shared/lib/logger");
+const userService = require('@convertix/shared/database/services/userService');
+const jobHistoryService = require("@convertix/shared/database/services/jobHistoryService");
+const createLogger = require("@convertix/shared/lib/logger");
 const logger = createLogger('api');
-const { query } = require('@video-editor/database/db');
+const { query } = require('@convertix/database/db');
 
 /**
  * Admin Controller

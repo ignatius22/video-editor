@@ -2,7 +2,7 @@
  * WebSocket Handler
  * Manages real-time job updates via Socket.IO
  */
-const createLogger = require('@video-editor/shared/lib/logger');
+const createLogger = require('@convertix/shared/lib/logger');
 const logger = createLogger('websocket');
 
 module.exports = async (io, queue, eventBus) => {
