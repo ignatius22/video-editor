@@ -1,4 +1,4 @@
-const sessionService = require("@video-editor/shared/database/services/sessionService");
+const sessionService = require("@convertix/shared/database/services/sessionService");
 
 /**
  * Authentication Middleware

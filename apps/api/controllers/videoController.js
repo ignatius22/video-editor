@@ -6,14 +6,14 @@ const { promisify } = require("util");
 const stream = require("stream");
 const pipeline = promisify(stream.pipeline);
 
-const videoService = require("@video-editor/shared/database/services/videoService");
-const { transaction } = require("@video-editor/shared/database/db");
-const FFOriginal = require("@video-editor/shared/lib/FF");
-const util = require("@video-editor/shared/lib/util");
-const createLogger = require("@video-editor/shared/lib/logger");
+const videoService = require("@convertix/shared/database/services/videoService");
+const { transaction } = require("@convertix/shared/database/db");
+const FFOriginal = require("@convertix/shared/lib/FF");
+const util = require("@convertix/shared/lib/util");
+const createLogger = require("@convertix/shared/lib/logger");
 const logger = createLogger('api');
-const telemetry = require("@video-editor/shared/telemetry");
-const userService = require("@video-editor/shared/database/services/userService");
+const telemetry = require("@convertix/shared/telemetry");
+const userService = require("@convertix/shared/database/services/userService");
 
 // Use instrumented FF module if telemetry is enabled
 const FF = telemetry.config.enabled

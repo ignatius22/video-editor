@@ -1,5 +1,5 @@
 {
-  "name": "@video-editor/database",
+  "name": "@convertix/database",
   "version": "1.0.0",
   "private": true,
   "main": "db.js",

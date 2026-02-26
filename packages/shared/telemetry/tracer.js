@@ -16,7 +16,7 @@ let sdk = null;
 
 /**
  * Initialize OpenTelemetry SDK
- * @param {string} serviceName - Service name (video-editor-api or video-editor-worker)
+ * @param {string} serviceName - Service name (convertix-api or convertix-worker)
  */
 function initializeTelemetry(serviceName) {
   if (!config.enabled) {

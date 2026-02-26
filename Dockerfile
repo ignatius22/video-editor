@@ -11,7 +11,7 @@ COPY packages/database/package.json ./packages/database/
 COPY apps/api/package.json ./apps/api/
 COPY apps/worker/package.json ./apps/worker/
 
-RUN npm ci --only=production --workspace=@video-editor/shared --workspace=@video-editor/database --workspace=@video-editor/api --workspace=@video-editor/worker && npm cache clean --force
+RUN npm ci --only=production --workspace=@convertix/shared --workspace=@convertix/database --workspace=@convertix/api --workspace=@convertix/worker && npm cache clean --force
 
 COPY packages/shared ./packages/shared
 COPY packages/database ./packages/database

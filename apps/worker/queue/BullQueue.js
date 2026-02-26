@@ -1,15 +1,15 @@
 const Bull = require('bull');
 const EventEmitter = require('events');
 const fs = require('fs').promises;
-const { transaction } = require('@video-editor/shared/database/db');
-const videoService = require('@video-editor/shared/database/services/videoService');
-const imageService = require('@video-editor/shared/database/services/imageService');
-const FFOriginal = require('@video-editor/shared/lib/FF');
-const util = require('@video-editor/shared/lib/util');
-const config = require('@video-editor/shared/config');
-const telemetry = require('@video-editor/shared/telemetry');
-const userService = require('@video-editor/shared/database/services/userService');
-const createLogger = require('@video-editor/shared/lib/logger');
+const { transaction } = require('@convertix/shared/database/db');
+const videoService = require('@convertix/shared/database/services/videoService');
+const imageService = require('@convertix/shared/database/services/imageService');
+const FFOriginal = require('@convertix/shared/lib/FF');
+const util = require('@convertix/shared/lib/util');
+const config = require('@convertix/shared/config');
+const telemetry = require('@convertix/shared/telemetry');
+const userService = require('@convertix/shared/database/services/userService');
+const createLogger = require('@convertix/shared/lib/logger');
 const logger = createLogger('queue');
 
 // Use instrumented FF module if telemetry is enabled
@@ -380,7 +380,7 @@ class BullQueue extends EventEmitter {
 
           // Resize video (FFmpeg operation is now auto-instrumented)
           await bullJob.progress(25);
-          await FF.resizeVideo(originalVideoPath, targetVideoPath, width, height, (progress) => {
+          await FF.resize(originalVideoPath, targetVideoPath, width, height, (progress) => {
             bullJob.progress(25 + Math.floor(progress * 0.5)); // Scale progress from 25% to 75%
           });
 
@@ -460,7 +460,7 @@ class BullQueue extends EventEmitter {
 
           // Convert format (FFmpeg operation is now auto-instrumented)
           await bullJob.progress(25);
-          await FF.convertVideo(originalPath, convertedPath, targetFormat, (progress) => {
+          await FF.convertFormat(originalPath, convertedPath, targetFormat, (progress) => {
             bullJob.progress(25 + Math.floor(progress * 0.5)); // Scale progress from 25% to 75%
           });
 

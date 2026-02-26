@@ -1,6 +1,6 @@
-const { query } = require('@video-editor/shared/database/db');
-const userService = require('@video-editor/shared/database/services/userService');
-const createLogger = require('@video-editor/shared/lib/logger');
+const { query } = require('@convertix/shared/database/db');
+const userService = require('@convertix/shared/database/services/userService');
+const createLogger = require('@convertix/shared/lib/logger');
 const logger = createLogger('billing-janitor');
 
 class ReservationJanitor {

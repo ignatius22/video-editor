@@ -1,4 +1,4 @@
-const db = require('@video-editor/shared/database/db');
+const db = require('@convertix/shared/database/db');
 
 async function cleanup() {
   const result = await db.query("DELETE FROM video_operations WHERE status = 'failed'");

@@ -1,5 +1,5 @@
 {
-  "name": "@video-editor/worker",
+  "name": "@convertix/worker",
   "version": "2.0.0",
   "private": true,
   "main": "worker.js",
@@ -8,7 +8,7 @@
     "start": "node worker.js"
   },
   "dependencies": {
-    "@video-editor/shared": "*",
+    "@convertix/shared": "*",
     "bull": "^4.16.5"
   },
   "devDependencies": {

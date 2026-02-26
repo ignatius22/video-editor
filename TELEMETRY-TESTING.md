@@ -22,11 +22,11 @@ docker-compose ps
 Expected output:
 ```
 NAME                   STATUS    PORTS
-video-editor-api       running   0.0.0.0:3000->3000/tcp
-video-editor-db        running   0.0.0.0:5432->5432/tcp
-video-editor-redis     running   0.0.0.0:6379->6379/tcp
-video-editor-worker-1  running
-video-editor-worker-2  running
+convertix-api       running   0.0.0.0:3000->3000/tcp
+convertix-db        running   0.0.0.0:5432->5432/tcp
+convertix-redis     running   0.0.0.0:6379->6379/tcp
+convertix-worker-1  running
+convertix-worker-2  running
 ```
 
 ## Step 2: Verify Telemetry Initialization
@@ -43,7 +43,7 @@ docker-compose logs worker | grep Telemetry
 
 You should see:
 ```
-[Telemetry] OpenTelemetry initialized for video-editor-api
+[Telemetry] OpenTelemetry initialized for convertix-api
 [Telemetry] Exporting to: host.docker.internal:4317
 [Telemetry] Sampling probability: 1
 ```
@@ -73,7 +73,7 @@ The script will:
    - Click on "Traces" in the left sidebar
 
 3. **Filter by Service**:
-   - Service Name: `video-editor-api` or `video-editor-worker`
+   - Service Name: `convertix-api` or `convertix-worker`
    - Time Range: Last 15 minutes
 
 4. **Explore a Trace**:
@@ -84,7 +84,7 @@ The script will:
 
 ### Upload Video (Synchronous FFmpeg)
 ```
-HTTP POST /api/videos/upload (video-editor-api, ~800ms)
+HTTP POST /api/videos/upload (convertix-api, ~800ms)
 ├─ pg.query INSERT INTO videos (3ms)
 ├─ ffmpeg.makeThumbnail (450ms)
 │  ├─ ffmpeg.input.path: {storage}/abc123/original.mp4
@@ -97,13 +97,13 @@ HTTP POST /api/videos/upload (video-editor-api, ~800ms)
 
 ### Resize Video (Distributed Trace: API → Queue → Worker)
 ```
-HTTP POST /api/videos/resize (video-editor-api, 45ms)
+HTTP POST /api/videos/resize (convertix-api, 45ms)
 ├─ pg.query SELECT FROM videos (3ms)
 ├─ queue.enqueue.resize (12ms)
 │  └─ ioredis.lpush video-processing (2ms)
 │      [trace context propagated via Redis]
 │
-└─ queue.process.resize (video-editor-worker, 3250ms)
+└─ queue.process.resize (convertix-worker, 3250ms)
    ├─ pg.query UPDATE operations SET status='processing' (4ms)
    ├─ ffmpeg.resize (3245ms)
    │  ├─ ffmpeg.operation: resize
@@ -200,7 +200,7 @@ Expected overhead: < 5% latency increase
 
 ```bash
 # Check container stats
-docker stats video-editor-api video-editor-worker-1
+docker stats convertix-api convertix-worker-1
 ```
 
 ## Step 7: SigNoz Dashboards
@@ -208,10 +208,10 @@ docker stats video-editor-api video-editor-worker-1
 ### Service Map
 Navigate to **Services** → **Service Map** to see:
 ```
-video-editor-api → PostgreSQL
+convertix-api → PostgreSQL
                  → Redis (Bull Queue)
                  ↓
-video-editor-worker → PostgreSQL
+convertix-worker → PostgreSQL
                     → FFmpeg
 ```
 
@@ -257,7 +257,7 @@ Group by: http.route
 
 2. **Verify OTLP endpoint is accessible from Docker**:
    ```bash
-   docker exec video-editor-api ping -c 2 host.docker.internal
+   docker exec convertix-api ping -c 2 host.docker.internal
    ```
 
 3. **Check telemetry logs**:
@@ -268,7 +268,7 @@ Group by: http.route
 
 4. **Verify environment variables**:
    ```bash
-   docker exec video-editor-api env | grep OTEL
+   docker exec convertix-api env | grep OTEL
    ```
 
 ### Traces are incomplete
@@ -281,7 +281,7 @@ Group by: http.route
 2. **Verify trace context propagation**:
    Look for `_traceContext` in job data (check Redis):
    ```bash
-   docker exec video-editor-redis redis-cli LRANGE bull:video-processing:wait 0 -1
+   docker exec convertix-redis redis-cli LRANGE bull:video-processing:wait 0 -1
    ```
 
 ### FFmpeg spans missing attributes
@@ -293,7 +293,7 @@ Group by: http.route
 
 2. **Verify config.enabled is true**:
    ```bash
-   docker exec video-editor-worker node -e "console.log(require('./shared/telemetry/config').enabled)"
+   docker exec convertix-worker node -e "console.log(require('./shared/telemetry/config').enabled)"
    ```
 
 ## Manual Testing (Alternative to Script)

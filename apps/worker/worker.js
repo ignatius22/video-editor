@@ -1,12 +1,12 @@
 // CRITICAL: Initialize telemetry FIRST (before any other imports)
-const telemetry = require('@video-editor/shared/telemetry');
-const sdk = telemetry.initializeTelemetry('video-editor-worker');
+const telemetry = require('@convertix/shared/telemetry');
+const sdk = telemetry.initializeTelemetry('convertix-worker');
 
 const BullQueue = require('./queue/BullQueue');
-const createLogger = require('@video-editor/shared/lib/logger');
+const createLogger = require('@convertix/shared/lib/logger');
 const logger = createLogger('worker');
-const db = require('@video-editor/shared/database/db');
-const config = require('@video-editor/shared/config');
+const db = require('@convertix/shared/database/db');
+const config = require('@convertix/shared/config');
 
 /**
  * Worker Service
@@ -83,7 +83,7 @@ const shutdown = async () => {
     console.log('[Worker] Queue closed');
 
     // Kill any remaining active FFmpeg processes
-    const FF = require('@video-editor/shared/lib/FF');
+    const FF = require('@convertix/shared/lib/FF');
     FF.cleanupProcesses();
     console.log('[Worker] Active FFmpeg processes cleaned up');
 

@@ -1,6 +1,6 @@
 const { v4: uuidv4 } = require('uuid');
-const outboxRepo = require('@video-editor/shared/outbox/outboxRepo');
-const createLogger = require('@video-editor/shared/lib/logger');
+const outboxRepo = require('@convertix/shared/outbox/outboxRepo');
+const createLogger = require('@convertix/shared/lib/logger');
 const logger = createLogger('outbox-dispatcher');
 
 /**
