@@ -10,6 +10,7 @@ import BillingPage from '@/pages/BillingPage';
 import ProfilePage from '@/pages/ProfilePage';
 import AdminDashboardPage from '@/pages/AdminDashboardPage';
 import AdminAnalyticsPage from '@/pages/AdminAnalyticsPage';
+import PaymentStatus from '@/pages/PaymentStatus';
 import './index.css';
 
 function ProtectedRoute({ children }) {
@@ -103,6 +104,22 @@ createRoot(document.getElementById('root')).render(
               <AdminRoute>
                 <AdminAnalyticsPage />
               </AdminRoute>
+            }
+          />
+          <Route
+            path="/payment/success"
+            element={
+              <ProtectedRoute>
+                <PaymentStatus />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/payment/cancel"
+            element={
+              <ProtectedRoute>
+                <PaymentStatus />
+              </ProtectedRoute>
             }
           />
           <Route path="*" element={<Navigate to="/" replace />} />

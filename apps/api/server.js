@@ -19,6 +19,7 @@ const videoRoutes = require('./routes/videoRoutes');
 const imageRoutes = require('./routes/imageRoutes');
 const billingRoutes = require('./routes/billingRoutes');
 const adminRoutes = require('./routes/adminRoutes');
+const paymentRoutes = require('./routes/paymentRoutes');
 const { authenticate, adminOnly } = require('./middleware/auth');
 const errorHandler = require('./middleware/errorHandler');
 const { EventBus } = require('@convertix/shared/eventBus');
@@ -59,30 +60,6 @@ const io = socketIO(server, {
 // Security & Global Middleware
 app.use(helmetConfig);
 app.use(globalLimiter);
-app.use(cors({ 
-  origin: config.api.corsOrigin,
-  credentials: true
-}));
-app.use(express.json());
-app.use(csrfProtection);
-
-// Add request logging middleware
-app.use((req, res, next) => {
-  const start = Date.now();
-  res.on('finish', () => {
-    const duration = Date.now() - start;
-    logger.info({
-      method: req.method,
-      url: req.url,
-      status: res.statusCode,
-      duration: `${duration}ms`,
-      ip: req.ip
-    }, 'HTTP Request');
-  });
-  next();
-});
-
-// Health check
 app.get('/health', (req, res) => {
   res.json({
     status: 'ok',
@@ -91,12 +68,23 @@ app.get('/health', (req, res) => {
   });
 });
 
+// JSON parser - skip for Stripe webhook to allow raw body verification
+app.use((req, res, next) => {
+  if (req.originalUrl === '/api/payments/webhook') {
+    next();
+  } else {
+    express.json()(req, res, next);
+  }
+});
+app.use(csrfProtection);
+
 // API Routes
 app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/videos', processingLimiter, authenticate, videoRoutes);
 app.use('/api/images', processingLimiter, authenticate, imageRoutes);
 app.use('/api/billing', authenticate, billingRoutes);
 app.use('/api/admin', authenticate, adminOnly, adminRoutes);
+app.use('/api/payments', paymentRoutes);
 
 // Error handler (must be last)
 app.use(errorHandler);

@@ -47,12 +47,15 @@ export default function BillingPage() {
   const handleBuyCredits = async (amount) => {
     try {
       setBuying(true);
-      await api.buyCredits(amount, `Purchased ${amount} credits bundle`);
-      toast.success(`Purchased ${amount} credits!`);
-      await refreshUser();
-      await fetchTransactions(false);
+      const { url } = await api.createPaymentSession(amount);
+      if (url) {
+        window.location.href = url;
+      } else {
+        throw new Error('No checkout URL received');
+      }
     } catch (error) {
-      toast.error('Purchase failed');
+      toast.error('Failed to initiate purchase');
+      console.error(error);
     } finally {
       setBuying(false);
     }
@@ -61,12 +64,15 @@ export default function BillingPage() {
   const handleUpgrade = async () => {
     try {
       setUpgrading(true);
-      await api.upgradeTier('pro');
-      toast.success('Successfully upgraded to PRO!');
-      await refreshUser();
-      await fetchTransactions(false);
+      const { url } = await api.createUpgradeSession();
+      if (url) {
+        window.location.href = url;
+      } else {
+        throw new Error('No checkout URL received');
+      }
     } catch (error) {
-      toast.error('Upgrade failed');
+      toast.error('Failed to initiate upgrade');
+      console.error(error);
     } finally {
       setUpgrading(false);
     }
@@ -128,9 +134,9 @@ export default function BillingPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-10 items-start">
-        {/* Buy Credits Card */}
-        <div className="lg:col-span-2 space-y-10">
+      <div className={`grid grid-cols-1 ${user?.tier === 'pro' ? 'lg:grid-cols-2' : 'lg:grid-cols-3'} gap-10 items-start`}>
+        {/* Main Content Area */}
+        <div className={`${user?.tier === 'pro' ? 'lg:col-span-2' : 'lg:col-span-2'} space-y-10`}>
           <div className="glass-card rounded-2xl overflow-hidden shadow-2xl">
             <div className="p-8 border-b border-border/50 bg-muted/30">
               <h2 className="text-xl font-bold flex items-center gap-3 tracking-tight">
@@ -238,8 +244,9 @@ export default function BillingPage() {
           </div>
         </div>
 
-        {/* Upgrade Card */}
-        <div className="space-y-6">
+        {/* Upgrade Card - Only show for non-Pro users */}
+        {user?.tier !== 'pro' && (
+          <div className="space-y-6">
           <div className={`glass-card border-none rounded-3xl overflow-hidden shadow-3xl shadow-primary/10 flex flex-col sticky top-28 transition-all hover:shadow-primary/20`}>
             {user?.tier === 'pro' && (
               <div className="bg-primary px-4 py-1.5 text-center text-[10px] font-black uppercase tracking-widest text-primary-foreground italic">
@@ -289,6 +296,7 @@ export default function BillingPage() {
             </div>
           </div>
         </div>
+      )}
       </div>
     </div>
   );

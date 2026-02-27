@@ -3,6 +3,10 @@
 # ── Base stage (shared Node dependencies for API & Worker) ──
 FROM node:18-alpine AS base
 RUN apk add --no-cache python3 make g++
+# Set npm timeouts and retries for unstable networks
+RUN npm config set fetch-retries 5 && \
+    npm config set fetch-retry-mintimeout 20000 && \
+    npm config set fetch-retry-maxtimeout 120000
 WORKDIR /app
 
 COPY package*.json ./
@@ -32,6 +36,10 @@ CMD ["node", "apps/worker/worker.js"]
 
 # ── Web Frontend (build stage — needs Node 22 for Vite 7 + Tailwind v4) ──
 FROM node:22-alpine AS web-build
+# Set npm timeouts and retries for unstable networks
+RUN npm config set fetch-retries 5 && \
+    npm config set fetch-retry-mintimeout 20000 && \
+    npm config set fetch-retry-maxtimeout 120000
 WORKDIR /app
 COPY apps/web/package.json ./
 RUN npm install && npm cache clean --force

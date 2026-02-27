@@ -1,13 +1,21 @@
 const API_BASE = '/api';
 
 async function request(url, options = {}) {
+  const headers = {
+    'Content-Type': 'application/json',
+    'X-CSRF-Protection': '1',
+    ...options.headers,
+  };
+
+  // Automatically generate a Request ID for state-changing methods if not present
+  const stateChangingMethods = ['POST', 'PUT', 'DELETE', 'PATCH'];
+  if (stateChangingMethods.includes(options.method?.toUpperCase()) && !headers['X-Request-ID']) {
+    headers['X-Request-ID'] = crypto.randomUUID?.() || Math.random().toString(36).substring(2);
+  }
+
   const res = await fetch(`${API_BASE}${url}`, {
     credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-CSRF-Protection': '1',
-      ...options.headers,
-    },
+    headers,
     ...options,
   });
 
@@ -56,6 +64,18 @@ export const upgradeTier = (tier = 'pro') =>
   request('/billing/upgrade', {
     method: 'POST',
     body: JSON.stringify({ tier }),
+  });
+
+// Stripe Payments
+export const createPaymentSession = (amount) =>
+  request('/payments/create-session', {
+    method: 'POST',
+    body: JSON.stringify({ amount }),
+  });
+
+export const createUpgradeSession = () =>
+  request('/payments/create-upgrade-session', {
+    method: 'POST',
   });
 
 // Videos

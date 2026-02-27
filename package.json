@@ -22,11 +22,18 @@
     "docker:logs:api": "docker-compose logs -f api",
     "docker:logs:worker": "docker-compose logs -f worker",
     "docker:restart": "docker-compose restart",
-    "docker:clean": "docker-compose down -v"
+    "docker:clean": "docker-compose down -v",
+    "seed": "node scripts/seed-data.js"
   },
   "author": "Ignatius Sani",
   "license": "ISC",
   "devDependencies": {
     "turbo": "^2.4.4"
+  },
+  "dependencies": {
+    "bcrypt": "^6.0.0",
+    "pg": "^8.19.0",
+    "stripe": "^20.4.0",
+    "uuid": "^9.0.1"
   }
 }

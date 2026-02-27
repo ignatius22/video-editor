@@ -31,7 +31,7 @@ const authLimiter = rateLimit({
  */
 const processingLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 20,
+  max: 200,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Processing limit exceeded. Please wait before starting more jobs.' }
