@@ -1,8 +1,10 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { ConvertixLoader } from '@/components/ConvertixLogo';
+import { queryClient } from '@/lib/queryClient';
 import LoginPage from '@/pages/LoginPage';
 import RegisterPage from '@/pages/RegisterPage';
 import DashboardPage from '@/pages/DashboardPage';
@@ -47,84 +49,86 @@ function PublicRoute({ children }) {
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <BrowserRouter>
-      <AuthProvider>
-        <Routes>
-          <Route
-            path="/login"
-            element={
-              <PublicRoute>
-                <LoginPage />
-              </PublicRoute>
-            }
-          />
-          <Route
-            path="/register"
-            element={
-              <PublicRoute>
-                <RegisterPage />
-              </PublicRoute>
-            }
-          />
-          <Route
-            path="/"
-            element={
-              <ProtectedRoute>
-                <DashboardPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/billing"
-            element={
-              <ProtectedRoute>
-                <BillingPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/profile"
-            element={
-              <ProtectedRoute>
-                <ProfilePage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/admin"
-            element={
-              <AdminRoute>
-                <AdminDashboardPage />
-              </AdminRoute>
-            }
-          />
-          <Route
-            path="/admin/analytics"
-            element={
-              <AdminRoute>
-                <AdminAnalyticsPage />
-              </AdminRoute>
-            }
-          />
-          <Route
-            path="/payment/success"
-            element={
-              <ProtectedRoute>
-                <PaymentStatus />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/payment/cancel"
-            element={
-              <ProtectedRoute>
-                <PaymentStatus />
-              </ProtectedRoute>
-            }
-          />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </AuthProvider>
-    </BrowserRouter>
+    <QueryClientProvider client={queryClient}>
+      <BrowserRouter>
+        <AuthProvider>
+          <Routes>
+            <Route
+              path="/login"
+              element={
+                <PublicRoute>
+                  <LoginPage />
+                </PublicRoute>
+              }
+            />
+            <Route
+              path="/register"
+              element={
+                <PublicRoute>
+                  <RegisterPage />
+                </PublicRoute>
+              }
+            />
+            <Route
+              path="/"
+              element={
+                <ProtectedRoute>
+                  <DashboardPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/billing"
+              element={
+                <ProtectedRoute>
+                  <BillingPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/profile"
+              element={
+                <ProtectedRoute>
+                  <ProfilePage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin"
+              element={
+                <AdminRoute>
+                  <AdminDashboardPage />
+                </AdminRoute>
+              }
+            />
+            <Route
+              path="/admin/analytics"
+              element={
+                <AdminRoute>
+                  <AdminAnalyticsPage />
+                </AdminRoute>
+              }
+            />
+            <Route
+              path="/payment/success"
+              element={
+                <ProtectedRoute>
+                  <PaymentStatus />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/payment/cancel"
+              element={
+                <ProtectedRoute>
+                  <PaymentStatus />
+                </ProtectedRoute>
+              }
+            />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </AuthProvider>
+      </BrowserRouter>
+    </QueryClientProvider>
   </StrictMode>
 );

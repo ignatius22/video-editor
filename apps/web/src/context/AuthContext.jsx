@@ -1,44 +1,70 @@
-import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { createContext, useContext, useCallback } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import * as api from '@/api/client';
+import { queryKeys } from '@/lib/queryKeys';
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
+  const {
+    data: user = null,
+    isLoading: loading,
+    refetch: refetchUser,
+  } = useQuery({
+    queryKey: queryKeys.auth.user,
+    queryFn: async () => {
+      const data = await api.getUser();
+      return data.user || data;
+    },
+    retry: false,
+  });
 
-  useEffect(() => {
-    api.getUser()
-      .then(data => setUser(data.user || data))
-      .catch(() => setUser(null))
-      .finally(() => setLoading(false));
-  }, []);
+  const loginMutation = useMutation({
+    mutationFn: ({ username, password }) => api.login(username, password),
+    onSuccess: (data) => {
+      queryClient.setQueryData(queryKeys.auth.user, data.user || data);
+    },
+  });
+
+  const registerMutation = useMutation({
+    mutationFn: ({ username, email, password }) => api.register(username, email, password),
+    onSuccess: (data) => {
+      queryClient.setQueryData(queryKeys.auth.user, data.user || data);
+    },
+  });
+
+  const logoutMutation = useMutation({
+    mutationFn: () => api.logout(),
+    onSuccess: () => {
+      queryClient.setQueryData(queryKeys.auth.user, null);
+      queryClient.invalidateQueries({ queryKey: ['media'] });
+      queryClient.invalidateQueries({ queryKey: ['billing'] });
+      queryClient.invalidateQueries({ queryKey: ['admin'] });
+    },
+  });
 
   const refreshUser = useCallback(async () => {
     try {
-      const data = await api.getUser();
-      setUser(data.user || data);
+      const { data } = await refetchUser();
+      return data;
     } catch (err) {
       console.error('Failed to refresh user:', err);
+      return null;
     }
-  }, []);
+  }, [refetchUser]);
 
   const login = useCallback(async (username, password) => {
-    const data = await api.login(username, password);
-    setUser(data.user || data);
-    return data;
-  }, []);
+    return loginMutation.mutateAsync({ username, password });
+  }, [loginMutation]);
 
   const register = useCallback(async (username, email, password) => {
-    const data = await api.register(username, email, password);
-    setUser(data.user || data);
-    return data;
-  }, []);
+    return registerMutation.mutateAsync({ username, email, password });
+  }, [registerMutation]);
 
   const logout = useCallback(async () => {
-    await api.logout();
-    setUser(null);
-  }, []);
+    await logoutMutation.mutateAsync();
+  }, [logoutMutation]);
 
   return (
     <AuthContext.Provider value={{ user, loading, login, register, logout, refreshUser }}>
@@ -47,6 +73,7 @@ export function AuthProvider({ children }) {
   );
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useAuth() {
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error('useAuth must be used within AuthProvider');

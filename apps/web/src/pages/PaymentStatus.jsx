@@ -1,33 +1,32 @@
-import React, { useEffect, useState } from 'react';
-import { useSearchParams, Link, useNavigate } from 'react-router-dom';
-import { CheckCircle2, XCircle, Loader2, ChevronRight, Zap } from 'lucide-react';
+import React, { useEffect } from 'react';
+import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
+import { CheckCircle2, XCircle, Loader2, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/context/AuthContext';
+import { queryKeys } from '@/lib/queryKeys';
 
 export default function PaymentStatus() {
   const [searchParams] = useSearchParams();
-  const [status, setStatus] = useState('loading'); // loading, success, cancel
   const { refreshUser } = useAuth();
+  const queryClient = useQueryClient();
   const navigate = useNavigate();
   
   const sessionId = searchParams.get('session_id');
   const isSuccess = window.location.pathname.includes('/success');
+  const status = isSuccess ? (sessionId ? 'success' : 'cancel') : 'cancel';
 
   useEffect(() => {
     if (isSuccess && sessionId) {
-      setStatus('success');
-      // Refresh user credits after a short delay to allow webhook to process
+      // Refresh user/billing state after a short delay to allow webhook processing.
       const timer = setTimeout(() => {
         refreshUser();
+        queryClient.invalidateQueries({ queryKey: queryKeys.auth.user });
+        queryClient.invalidateQueries({ queryKey: ['billing'] });
       }, 3000);
       return () => clearTimeout(timer);
-    } else if (!isSuccess) {
-      setStatus('cancel');
-    } else {
-      // Success path but no session ID?
-      setStatus('cancel');
     }
-  }, [isSuccess, sessionId, refreshUser]);
+  }, [isSuccess, sessionId, refreshUser, queryClient]);
 
   return (
     <div className="min-h-[80vh] flex items-center justify-center px-4">

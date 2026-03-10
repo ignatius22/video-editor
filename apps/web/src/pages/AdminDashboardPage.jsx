@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import ConvertixLogo from '@/components/ConvertixLogo';
 import { 
   Users, 
@@ -21,12 +22,11 @@ import { useAuth } from '@/context/AuthContext';
 import AdminLayout from '@/components/AdminLayout';
 import { Button } from '@/components/ui/button';
 import { usePaginatedQuery } from '@/hooks/usePaginatedQuery';
+import { queryKeys } from '@/lib/queryKeys';
 
 export default function AdminDashboardPage() {
   const { user: currentUser } = useAuth();
-  const [stats, setStats] = useState(null);
-  const [statsLoading, setStatsLoading] = useState(true);
-  const [statsRefreshing, setStatsRefreshing] = useState(false);
+  const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState('');
   const limit = 10;
   const usersQueryFn = useCallback(async ({ limit, offset }) => {
@@ -50,29 +50,22 @@ export default function AdminDashboardPage() {
     prevPage,
     refresh: refreshUsers,
   } = usePaginatedQuery({
+    queryKey: queryKeys.admin.users,
     pageSize: limit,
     queryFn: usersQueryFn,
   });
 
-  const fetchStats = async (initial = false) => {
-    try {
-      if (initial) setStatsLoading(true);
-      else setStatsRefreshing(true);
-
-      const statsData = await api.getPlatformStats();
-      setStats(statsData);
-    } catch (err) {
-      console.error('Failed to fetch admin data:', err);
-      toast.error('Failed to load administrative data');
-    } finally {
-      setStatsLoading(false);
-      setStatsRefreshing(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchStats(true);
-  }, []);
+  const {
+    data: stats,
+    isLoading: statsLoading,
+    isFetching: statsFetching,
+    error: statsError,
+    refetch: refetchStats,
+  } = useQuery({
+    queryKey: queryKeys.admin.stats,
+    queryFn: api.getPlatformStats,
+    staleTime: 15 * 1000,
+  });
 
   useEffect(() => {
     if (usersError) {
@@ -81,15 +74,26 @@ export default function AdminDashboardPage() {
     }
   }, [usersError]);
 
+  useEffect(() => {
+    if (statsError) {
+      console.error('Failed to fetch admin data:', statsError);
+      toast.error('Failed to load administrative data');
+    }
+  }, [statsError]);
+
   const refreshAll = async () => {
-    await Promise.all([refreshUsers(), fetchStats(false)]);
+    await Promise.all([refreshUsers(), refetchStats()]);
   };
 
   const handleUpdateUser = async (userId, data) => {
     try {
       await api.updateUserAdmin(userId, data);
       toast.success('User updated successfully');
-      refreshUsers();
+      await Promise.all([
+        refreshUsers(),
+        queryClient.invalidateQueries({ queryKey: queryKeys.admin.users }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.admin.stats }),
+      ]);
     } catch {
       toast.error('Failed to update user');
     }
@@ -120,7 +124,7 @@ export default function AdminDashboardPage() {
   };
 
   const loading = usersLoading || statsLoading;
-  const refreshing = usersRefreshing || statsRefreshing;
+  const refreshing = usersRefreshing || statsFetching;
 
   if (loading) {
     return (

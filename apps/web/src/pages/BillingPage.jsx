@@ -17,6 +17,7 @@ import { toast } from 'sonner';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { usePaginatedQuery } from '@/hooks/usePaginatedQuery';
+import { queryKeys } from '@/lib/queryKeys';
 
 export default function BillingPage() {
   const { user } = useAuth();
@@ -44,6 +45,7 @@ export default function BillingPage() {
     prevPage,
     refresh: fetchTransactions,
   } = usePaginatedQuery({
+    queryKey: queryKeys.billing.transactions,
     pageSize,
     queryFn: transactionsQueryFn,
   });

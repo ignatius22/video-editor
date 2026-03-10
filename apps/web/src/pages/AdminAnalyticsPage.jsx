@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import ConvertixLogo from '@/components/ConvertixLogo';
 import { 
   TrendingUp, 
@@ -12,27 +13,82 @@ import {
 import { toast } from 'sonner';
 import * as api from '@/api/client';
 import AdminLayout from '@/components/AdminLayout';
+import { queryKeys } from '@/lib/queryKeys';
+
+function SimpleBarChart({ data, color = "#6366f1" }) {
+  if (!data || data.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-full text-zinc-600 text-sm">
+        No credit activity in the last 7 days
+      </div>
+    );
+  }
+  const max = Math.max(...data.map(d => d.value), 1);
+  const height = 150;
+  const width = 400;
+  const barWidth = (width / Math.max(data.length, 1)) * 0.7;
+  const gap = (width / Math.max(data.length, 1)) * 0.3;
+
+  return (
+    <svg width="100%" height={height + 20} viewBox={`0 0 ${width} ${height + 20}`} className="overflow-visible">
+      {data.map((d, i) => {
+        const barHeight = (d.value / max) * height;
+        return (
+          <g key={i} className="group">
+            <rect
+              x={i * (barWidth + gap) + gap / 2}
+              y={height - barHeight}
+              width={barWidth}
+              height={Math.max(barHeight, 2)}
+              fill={color}
+              rx="4"
+              className="opacity-80 group-hover:opacity-100 transition-all duration-300"
+            />
+            <text
+              x={i * (barWidth + gap) + gap / 2 + barWidth / 2}
+              y={height + 15}
+              fontSize="10"
+              fill="#71717a"
+              textAnchor="middle"
+            >
+              {d.label}
+            </text>
+            <text
+              x={i * (barWidth + gap) + gap / 2 + barWidth / 2}
+              y={height - barHeight - 5}
+              fontSize="9"
+              fill="#a1a1aa"
+              textAnchor="middle"
+              className="opacity-0 group-hover:opacity-100 transition-opacity"
+            >
+              {d.value}
+            </text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
 
 export default function AdminAnalyticsPage() {
-  const [stats, setStats] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const {
+    data: stats,
+    isLoading: loading,
+    isFetching,
+    refetch: fetchStats,
+    error,
+  } = useQuery({
+    queryKey: queryKeys.admin.stats,
+    queryFn: api.getPlatformStats,
+    staleTime: 15 * 1000,
+  });
 
   useEffect(() => {
-    fetchStats();
-  }, []);
-
-  const fetchStats = async () => {
-    try {
-      setLoading(true);
-      const data = await api.getPlatformStats();
-      setStats(data);
-    } catch (error) {
+    if (error) {
       console.error('Failed to fetch analytics:', error);
       toast.error('Failed to load platform analytics');
-    } finally {
-      setLoading(false);
     }
-  };
+  }, [error]);
 
   if (loading) {
     return (
@@ -76,62 +132,6 @@ export default function AdminAnalyticsPage() {
     ? ((parseInt(completedJobs?.count || 0) / totalJobs) * 100).toFixed(1) 
     : 0;
 
-  // Simple Bar Chart Component using SVG
-  const SimpleBarChart = ({ data, color = "#6366f1" }) => {
-    if (!data || data.length === 0) {
-      return (
-        <div className="flex items-center justify-center h-full text-zinc-600 text-sm">
-          No credit activity in the last 7 days
-        </div>
-      );
-    }
-    const max = Math.max(...data.map(d => d.value), 1);
-    const height = 150;
-    const width = 400;
-    const barWidth = (width / Math.max(data.length, 1)) * 0.7;
-    const gap = (width / Math.max(data.length, 1)) * 0.3;
-
-    return (
-      <svg width="100%" height={height + 20} viewBox={`0 0 ${width} ${height + 20}`} className="overflow-visible">
-        {data.map((d, i) => {
-          const barHeight = (d.value / max) * height;
-          return (
-            <g key={i} className="group">
-              <rect
-                x={i * (barWidth + gap) + gap / 2}
-                y={height - barHeight}
-                width={barWidth}
-                height={Math.max(barHeight, 2)}
-                fill={color}
-                rx="4"
-                className="opacity-80 group-hover:opacity-100 transition-all duration-300"
-              />
-              <text
-                x={i * (barWidth + gap) + gap / 2 + barWidth / 2}
-                y={height + 15}
-                fontSize="10"
-                fill="#71717a"
-                textAnchor="middle"
-              >
-                {d.label}
-              </text>
-              <text
-                x={i * (barWidth + gap) + gap / 2 + barWidth / 2}
-                y={height - barHeight - 5}
-                fontSize="9"
-                fill="#a1a1aa"
-                textAnchor="middle"
-                className="opacity-0 group-hover:opacity-100 transition-opacity"
-              >
-                {d.value}
-              </text>
-            </g>
-          );
-        })}
-      </svg>
-    );
-  };
-
   return (
     <AdminLayout title="Analytics">
       <div className="p-6 lg:p-8 max-w-7xl mx-auto space-y-8">
@@ -145,7 +145,7 @@ export default function AdminAnalyticsPage() {
             onClick={fetchStats}
             className="flex items-center gap-2 px-4 py-2 bg-zinc-900 border border-zinc-800 rounded-lg text-sm font-medium hover:bg-zinc-800 transition-colors"
           >
-            <RefreshCw className="w-4 h-4" />
+            <RefreshCw className={`w-4 h-4 ${isFetching ? 'animate-spin' : ''}`} />
             Refresh
           </button>
         </div>
