@@ -10,13 +10,24 @@ const getTransactions = async (req, res) => {
   const { limit = 50, offset = 0 } = req.query;
   
   try {
-    const transactions = await userService.getCreditTransactions(
-      req.userId, 
-      parseInt(limit), 
-      parseInt(offset)
-    );
+    const [transactions, total] = await Promise.all([
+      userService.getCreditTransactions(
+        req.userId, 
+        parseInt(limit), 
+        parseInt(offset)
+      ),
+      userService.getCreditTransactionsCount(req.userId)
+    ]);
     
-    res.status(200).json({ transactions });
+    res.status(200).json({
+      transactions,
+      pagination: {
+        total,
+        limit: parseInt(limit),
+        offset: parseInt(offset),
+        hasMore: parseInt(offset) + parseInt(limit) < total
+      }
+    });
   } catch (error) {
     logger.error({ err: error.message, stack: error.stack, userId: req.userId }, 'Get transactions error');
     res.status(500).json({ error: "Failed to fetch transactions." });

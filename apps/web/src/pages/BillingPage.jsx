@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import * as api from '@/api/client';
 import { 
@@ -10,39 +10,50 @@ import {
   TrendingUp, 
   AlertCircle,
   ChevronLeft,
+  ChevronRight,
   RefreshCw
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
+import { usePaginatedQuery } from '@/hooks/usePaginatedQuery';
 
 export default function BillingPage() {
-  const { user, refreshUser } = useAuth();
-  const [transactions, setTransactions] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [isRefreshing, setIsRefreshing] = useState(false);
+  const { user } = useAuth();
   const [buying, setBuying] = useState(false);
   const [upgrading, setUpgrading] = useState(false);
-
-  useEffect(() => {
-    fetchTransactions(true);
+  const pageSize = 20;
+  const transactionsQueryFn = useCallback(async ({ limit, offset }) => {
+    const data = await api.getTransactions(limit, offset);
+    return {
+      items: data.transactions || [],
+      total: data.pagination?.total || 0,
+    };
   }, []);
 
-  const fetchTransactions = async (initial = false) => {
-    try {
-      if (initial) setLoading(true);
-      else setIsRefreshing(true);
-      
-      const data = await api.getTransactions();
-      setTransactions(data.transactions || []);
-    } catch (error) {
+  const {
+    items: transactions,
+    total,
+    offset,
+    loading,
+    refreshing: isRefreshing,
+    error,
+    hasPrev,
+    hasNext,
+    nextPage,
+    prevPage,
+    refresh: fetchTransactions,
+  } = usePaginatedQuery({
+    pageSize,
+    queryFn: transactionsQueryFn,
+  });
+
+  useEffect(() => {
+    if (error) {
       console.error('Failed to fetch transactions:', error);
       toast.error('Failed to load transaction history');
-    } finally {
-      setLoading(false);
-      setIsRefreshing(false);
     }
-  };
+  }, [error]);
 
   const handleBuyCredits = async (amount) => {
     try {
@@ -87,12 +98,6 @@ export default function BillingPage() {
       minute: '2-digit'
     });
   };
-
-  const pricingPlans = [
-    { title: 'Starter', credits: 10, price: 'FREE', description: 'Perfect for trying out the platform' },
-    { title: 'Basic', credits: 50, price: '$5', description: 'For occasional media processing' },
-    { title: 'Pro Pack', credits: 200, price: '$15', description: 'Best value for regular creators' },
-  ];
 
   return (
     <div className="mx-auto py-12 px-4 max-w-6xl space-y-12 animate-in-fade">
@@ -181,7 +186,7 @@ export default function BillingPage() {
               <Button 
                 variant="ghost" 
                 size="sm"
-                onClick={() => fetchTransactions(false)}
+                onClick={fetchTransactions}
                 disabled={loading || isRefreshing}
                 className="text-[10px] font-black uppercase tracking-widest hover:bg-primary/10 hover:text-primary rounded-xl"
               >
@@ -233,6 +238,31 @@ export default function BillingPage() {
                     ))}
                   </tbody>
                 </table>
+                <div className="px-8 py-4 border-t border-border/30 bg-muted/20 flex items-center justify-between">
+                  <div className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">
+                    Ledger Rows <span className="text-foreground">{offset + 1}</span> - <span className="text-foreground">{Math.min(offset + pageSize, total)}</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      disabled={!hasPrev || loading || isRefreshing}
+                      onClick={prevPage}
+                      className="h-8 w-8 rounded-lg"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      disabled={!hasNext || loading || isRefreshing}
+                      onClick={nextPage}
+                      className="h-8 w-8 rounded-lg"
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
               </div>
             ) : (
                 <div className="p-20 text-center text-muted-foreground flex flex-col items-center justify-center gap-4">

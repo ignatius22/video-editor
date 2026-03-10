@@ -266,6 +266,19 @@ class UserService {
   }
 
   /**
+   * Get total credit transaction count for a user
+   * @param {number} userId - User ID
+   * @returns {Promise<number>} Total count
+   */
+  async getCreditTransactionsCount(userId) {
+    const result = await query(
+      'SELECT COUNT(*)::int AS total FROM credit_transactions WHERE user_id = $1',
+      [userId]
+    );
+    return result.rows[0]?.total || 0;
+  }
+
+  /**
    * Reserve credits for an operation
    * @param {number} userId - User ID
    * @param {number} amount - Amount to reserve

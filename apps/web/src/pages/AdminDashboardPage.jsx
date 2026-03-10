@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import ConvertixLogo from '@/components/ConvertixLogo';
 import { 
   Users, 
@@ -20,52 +20,77 @@ import * as api from '@/api/client';
 import { useAuth } from '@/context/AuthContext';
 import AdminLayout from '@/components/AdminLayout';
 import { Button } from '@/components/ui/button';
+import { usePaginatedQuery } from '@/hooks/usePaginatedQuery';
 
 export default function AdminDashboardPage() {
   const { user: currentUser } = useAuth();
-  const [users, setUsers] = useState([]);
   const [stats, setStats] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
+  const [statsLoading, setStatsLoading] = useState(true);
+  const [statsRefreshing, setStatsRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  
-  // Pagination
-  const [offset, setOffset] = useState(0);
-  const [total, setTotal] = useState(0);
   const limit = 10;
+  const usersQueryFn = useCallback(async ({ limit, offset }) => {
+    const usersData = await api.getAllUsers(limit, offset);
+    return {
+      items: usersData.users || [],
+      total: usersData.pagination?.total || 0,
+    };
+  }, []);
 
-  useEffect(() => {
-    fetchData(true);
-  }, [offset]);
+  const {
+    items: users,
+    total,
+    offset,
+    loading: usersLoading,
+    refreshing: usersRefreshing,
+    error: usersError,
+    hasPrev,
+    hasNext,
+    nextPage,
+    prevPage,
+    refresh: refreshUsers,
+  } = usePaginatedQuery({
+    pageSize: limit,
+    queryFn: usersQueryFn,
+  });
 
-  const fetchData = async (initial = false) => {
+  const fetchStats = async (initial = false) => {
     try {
-      if (initial) setLoading(true);
-      else setRefreshing(true);
-      
-      const [usersData, statsData] = await Promise.all([
-        api.getAllUsers(limit, offset),
-        api.getPlatformStats()
-      ]);
-      
-      setUsers(usersData.users || []);
-      setTotal(usersData.pagination?.total || 0);
+      if (initial) setStatsLoading(true);
+      else setStatsRefreshing(true);
+
+      const statsData = await api.getPlatformStats();
       setStats(statsData);
-    } catch (error) {
-      console.error('Failed to fetch admin data:', error);
+    } catch (err) {
+      console.error('Failed to fetch admin data:', err);
       toast.error('Failed to load administrative data');
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      setStatsLoading(false);
+      setStatsRefreshing(false);
     }
+  };
+
+  useEffect(() => {
+    fetchStats(true);
+  }, []);
+
+  useEffect(() => {
+    if (usersError) {
+      console.error('Failed to fetch users:', usersError);
+      toast.error('Failed to load users');
+    }
+  }, [usersError]);
+
+  const refreshAll = async () => {
+    await Promise.all([refreshUsers(), fetchStats(false)]);
   };
 
   const handleUpdateUser = async (userId, data) => {
     try {
       await api.updateUserAdmin(userId, data);
       toast.success('User updated successfully');
-      fetchData(false);
-    } catch (error) {
+      refreshUsers();
+    } catch {
       toast.error('Failed to update user');
     }
   };
@@ -94,6 +119,9 @@ export default function AdminDashboardPage() {
     });
   };
 
+  const loading = usersLoading || statsLoading;
+  const refreshing = usersRefreshing || statsRefreshing;
+
   if (loading) {
     return (
       <AdminLayout title="Dashboard">
@@ -121,7 +149,7 @@ export default function AdminDashboardPage() {
           <Button 
             variant="outline"
             size="sm"
-            onClick={() => fetchData(false)}
+            onClick={refreshAll}
             disabled={refreshing}
             className="rounded-xl border-border/50 hover:bg-muted font-bold uppercase tracking-widest text-[10px] h-10 px-6 shadow-sm shadow-primary/5"
           >
@@ -339,8 +367,8 @@ export default function AdminDashboardPage() {
               <Button 
                 variant="outline"
                 size="icon"
-                disabled={offset === 0}
-                onClick={() => setOffset(Math.max(0, offset - limit))}
+                disabled={!hasPrev}
+                onClick={prevPage}
                 className="h-10 w-10 border-border/50 rounded-xl hover:bg-muted font-bold transition-all shadow-sm disabled:opacity-30"
               >
                 <ChevronLeft className="w-4.5 h-4.5" />
@@ -348,8 +376,8 @@ export default function AdminDashboardPage() {
               <Button 
                 variant="outline"
                 size="icon"
-                disabled={offset + limit >= total}
-                onClick={() => setOffset(offset + limit)}
+                disabled={!hasNext}
+                onClick={nextPage}
                 className="h-10 w-10 border-border/50 rounded-xl hover:bg-muted font-bold transition-all shadow-sm disabled:opacity-30"
               >
                 <ChevronRight className="w-4.5 h-4.5" />
